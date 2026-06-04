@@ -1,0 +1,52 @@
+$ErrorActionPreference = "Stop"
+
+$root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$electronDist = Resolve-Path (Join-Path $root "node_modules\electron\dist")
+$out = Join-Path $root "dist\FTSerialTool-win32-x64"
+
+if (Test-Path $out) {
+  Remove-Item -LiteralPath $out -Recurse -Force
+}
+
+New-Item -ItemType Directory -Force -Path $out | Out-Null
+Copy-Item -Path (Join-Path $electronDist "*") -Destination $out -Recurse -Force
+Rename-Item -LiteralPath (Join-Path $out "electron.exe") -NewName "FTSerialTool.exe"
+
+$locales = Join-Path $out "locales"
+Get-ChildItem -LiteralPath $locales -File |
+  Where-Object { $_.Name -notin @("en-US.pak", "zh-CN.pak") } |
+  Remove-Item -Force
+
+$defaultApp = Join-Path $out "resources\default_app.asar"
+if (Test-Path $defaultApp) {
+  Remove-Item -LiteralPath $defaultApp -Force
+}
+
+$appDir = Join-Path $out "resources\app"
+New-Item -ItemType Directory -Force -Path $appDir | Out-Null
+
+$files = @(
+  "index.html",
+  "styles.css",
+  "app.js",
+  "protocol-parser.js",
+  "main.js",
+  "preload.js",
+  "package.json",
+  "package-lock.json"
+)
+
+foreach ($file in $files) {
+  Copy-Item -LiteralPath (Join-Path $root $file) -Destination $appDir -Force
+}
+
+Push-Location $appDir
+try {
+  npm install --omit=dev --no-audit --no-fund | Out-Host
+} finally {
+  Pop-Location
+}
+
+Remove-Item -LiteralPath (Join-Path $appDir "package-lock.json") -Force
+
+Write-Host "Created $out\FTSerialTool.exe"
