@@ -260,8 +260,9 @@ function downloadReleaseAsset(asset) {
   return new Promise((resolve, reject) => {
     const target = path.join(app.getPath("downloads"), asset.name);
     const output = fs.createWriteStream(target);
-    const request = electronNet.request({ url: asset.browser_download_url });
+    const request = electronNet.request({ url: asset.url || asset.browser_download_url });
     request.setHeader("User-Agent", `FTSerialTool/${app.getVersion()}`);
+    if (asset.url) request.setHeader("Accept", "application/octet-stream");
     request.on("response", (response) => {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         output.close();
