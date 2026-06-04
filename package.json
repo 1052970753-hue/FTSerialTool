@@ -2,6 +2,7 @@
   "name": "ftserialtool",
   "version": "1.0.0",
   "description": "FT serial protocol workbench",
+  "repository": "https://github.com/1052970753-hue/FTSerialTool",
   "main": "main.js",
   "private": true,
   "scripts": {

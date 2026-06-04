@@ -1,5 +1,7 @@
 # FTSerialTool
 
+GitHub: https://github.com/1052970753-hue/FTSerialTool
+
 FTSerialTool 是面向串口、蓝牙串口和网络串口的协议调试工具，支持：
 
 - 可视化发送组包与接收解析

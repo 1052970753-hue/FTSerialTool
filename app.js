@@ -1976,7 +1976,7 @@ function applyToolLanguage(language, notifyMain = true) {
 }
 
 function updateSettingsFromStorage() {
-  const repository = localStorage.getItem("ftGitHubRepository") || "";
+  const repository = localStorage.getItem("ftGitHubRepository") || "https://github.com/1052970753-hue/FTSerialTool";
   const autoCheck = localStorage.getItem("ftAutoCheckUpdates") !== "false";
   if (els.githubRepository) els.githubRepository.value = repository;
   if (els.autoCheckUpdates) els.autoCheckUpdates.checked = autoCheck;
