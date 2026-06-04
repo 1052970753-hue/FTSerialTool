@@ -39,8 +39,8 @@ npm run pack:win
 更新 `package.json` 中的版本号后创建对应标签，例如：
 
 ```powershell
-git tag v1.1.0
-git push origin v1.1.0
+npm version patch --no-git-tag-version
+npm run release:github
 ```
 
-GitHub Actions 会自动构建并发布 `FTSerialTool-win32-x64.zip`。软件通过 GitHub Releases 检查和下载新版本。
+`release:github` 会通过 GitHub API 同步源码并创建版本标签。GitHub Actions 随后自动构建并发布 `FTSerialTool-win32-x64.zip`。软件通过 GitHub Releases 检查和下载新版本。
