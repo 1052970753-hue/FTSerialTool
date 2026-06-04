@@ -4,6 +4,11 @@ const path = require("path");
 const nodeNet = require("net");
 const { SerialPort } = require("serialport");
 
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=256");
+app.commandLine.appendSwitch("renderer-process-limit", "1");
+app.commandLine.appendSwitch("disable-features", "AutofillServerCommunication,MediaRouter,OptimizationHints,Translate");
+app.disableHardwareAcceleration();
+
 let mainWindow;
 let tcpSocket = null;
 let usbPort = null;
@@ -26,6 +31,8 @@ function createWindow() {
       sandbox: false,
       experimentalFeatures: true,
       enableBlinkFeatures: "Serial,WebBluetooth",
+      backgroundThrottling: true,
+      spellcheck: false,
     },
   });
 
@@ -362,7 +369,7 @@ ipcMain.handle("usb:connect", async (event, { path: portPath, baudRate }) => {
         return;
       }
       port.removeListener("error", fail);
-      port.on("data", (buffer) => event.sender.send("usb:data", [...buffer]));
+      port.on("data", (buffer) => event.sender.send("usb:data", buffer));
       port.on("close", () => {
         usbPort = null;
         event.sender.send("usb:close");
@@ -412,7 +419,7 @@ ipcMain.handle("tcp:connect", async (event, { host, port }) => {
     tcpSocket.once("error", fail);
     tcpSocket.connect(port, host, () => {
       tcpSocket.removeListener("error", fail);
-      tcpSocket.on("data", (buffer) => event.sender.send("tcp:data", [...buffer]));
+  tcpSocket.on("data", (buffer) => event.sender.send("tcp:data", buffer));
       tcpSocket.on("close", () => {
         tcpSocket = null;
         event.sender.send("tcp:close");

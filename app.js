@@ -115,6 +115,13 @@ const widgetTypes = [
 ];
 
 const colors = ["#ff4d4f", "#20c997", "#46a3ff", "#f9c74f", "#b185ff", "#ff8f3d", "#5cd6d6", "#ef5da8"];
+const MAX_RECEIVE_BUFFER_BYTES = 256 * 1024;
+const MAX_CSV_ROWS = 20000;
+const MAX_TERMINAL_CHARS = 200000;
+const MAX_LOG_ROWS = 5000;
+const MAX_CURVE_POINTS = 5000;
+const UI_REFRESH_MS = 50;
+const expressionCache = new Map();
 
 const state = {
   port: null,
@@ -152,6 +159,8 @@ const state = {
   cyclePacketIndex: 0,
   dashboardWidgets: [],
   dashboardSkin: "clean",
+  logRenderTimer: null,
+  runtimeRenderTimer: null,
   language: localStorage.getItem("ftToolLanguage") || "zh",
   modalResolver: null,
   protocolAnalysis: null,
@@ -254,9 +263,9 @@ function addLog(kind, payload, options = {}) {
   const text = bytes ? (els.hexView.checked ? toHex(bytes) : bytesText(bytes)) : String(payload);
   const row = { kind, time: nowLabel(), text, css: options.css || "" };
   state.logRows.push(row);
-  const max = Number(els.maxLogLines.value) || 2000;
+  const max = Math.min(MAX_LOG_ROWS, Number(els.maxLogLines.value) || 2000);
   if (state.logRows.length > max) state.logRows.splice(0, state.logRows.length - max);
-  renderLog();
+  scheduleLogRender();
   if (kind === "rx" && bytes) {
     state.rxBytes += bytes.length;
     els.rxCount.textContent = state.rxBytes;
@@ -265,6 +274,14 @@ function addLog(kind, payload, options = {}) {
     state.txBytes += bytes.length;
     els.txCount.textContent = state.txBytes;
   }
+}
+
+function scheduleLogRender() {
+  if (state.logRenderTimer) return;
+  state.logRenderTimer = setTimeout(() => {
+    state.logRenderTimer = null;
+    renderLog();
+  }, UI_REFRESH_MS);
 }
 
 function renderLog() {
@@ -465,6 +482,9 @@ function handleIncoming(bytes) {
   addLog("rx", bytes);
   appendTerminal(bytesText(bytes));
   state.receiveBuffer.push(...bytes);
+  if (state.receiveBuffer.length > MAX_RECEIVE_BUFFER_BYTES) {
+    state.receiveBuffer.splice(0, state.receiveBuffer.length - MAX_RECEIVE_BUFFER_BYTES);
+  }
   runParsers();
 }
 
@@ -686,8 +706,7 @@ function runParsers() {
     }
   }
   if (parsed) {
-    renderMetrics();
-    drawCurve();
+    scheduleRuntimeRender();
   }
 }
 
@@ -721,7 +740,13 @@ function parseFrame(parser, frame) {
 function applyExpression(x, expr) {
   if (!expr || expr.trim() === "" || expr.trim() === "x") return roundValue(x);
   try {
-    const fn = new Function("x", "Truncate", "Round", "Abs", "Min", "Max", `"use strict"; return (${expr});`);
+    const source = expr.trim();
+    let fn = expressionCache.get(source);
+    if (!fn) {
+      fn = new Function("x", "Truncate", "Round", "Abs", "Min", "Max", `"use strict"; return (${source});`);
+      if (expressionCache.size >= 100) expressionCache.delete(expressionCache.keys().next().value);
+      expressionCache.set(source, fn);
+    }
     return roundValue(fn(x, Math.trunc, Math.round, Math.abs, Math.min, Math.max));
   } catch {
     return roundValue(x);
@@ -746,8 +771,20 @@ function updateMetrics(values) {
   const time = Date.now();
   for (const [name, value] of Object.entries(values)) {
     state.metrics[name] = { value, time };
-    if (els.logCsv.checked) state.csvRows.push([new Date().toISOString(), name, value]);
+    if (els.logCsv.checked) {
+      state.csvRows.push([new Date().toISOString(), name, value]);
+      if (state.csvRows.length > MAX_CSV_ROWS) state.csvRows.splice(0, state.csvRows.length - MAX_CSV_ROWS);
+    }
   }
+}
+
+function scheduleRuntimeRender() {
+  if (state.runtimeRenderTimer) return;
+  state.runtimeRenderTimer = setTimeout(() => {
+    state.runtimeRenderTimer = null;
+    renderMetrics();
+    drawCurve();
+  }, UI_REFRESH_MS);
 }
 
 function syncDashboardFromParserDefinitions() {
@@ -766,13 +803,12 @@ function pushCurvePoint(name, value) {
   }
   const points = state.curveSeries[name].points;
   points.push({ t: Date.now(), v: Number(value) || 0 });
-  const max = Number(els.maxCurvePoints.value) || 1200;
+  const max = Math.min(MAX_CURVE_POINTS, Number(els.maxCurvePoints.value) || 1200);
   if (points.length > max) points.splice(0, points.length - max);
 }
 
 function renderMetrics() {
   syncDashboardFromParserDefinitions();
-  renderSendDashboardControls();
   els.metricGrid.innerHTML = "";
   if (!state.dashboardWidgets.length) {
     els.metricGrid.innerHTML = `<div class="dashboard-empty">请在“接收解析”字段中勾选“面板”，数据面板会自动显示。</div>`;
@@ -1294,6 +1330,10 @@ function resetCurveView() {
 
 function resetRuntimeData() {
   stopAllPacketCycles();
+  if (state.logRenderTimer) clearTimeout(state.logRenderTimer);
+  if (state.runtimeRenderTimer) clearTimeout(state.runtimeRenderTimer);
+  state.logRenderTimer = null;
+  state.runtimeRenderTimer = null;
   state.metrics = {};
   state.curveSeries = {};
   state.hiddenSeries = {};
@@ -1811,6 +1851,9 @@ function bytesToNumber(bytes, bigEndian) {
 
 function appendTerminal(text) {
   els.terminalView.textContent += text;
+  if (els.terminalView.textContent.length > MAX_TERMINAL_CHARS) {
+    els.terminalView.textContent = els.terminalView.textContent.slice(-MAX_TERMINAL_CHARS);
+  }
   els.terminalView.scrollTop = els.terminalView.scrollHeight;
 }
 
