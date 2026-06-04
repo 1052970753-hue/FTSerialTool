@@ -1,6 +1,6 @@
 {
   "name": "ftserialtool",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "FT serial protocol workbench",
   "repository": "https://github.com/1052970753-hue/FTSerialTool",
   "main": "main.js",
@@ -10,6 +10,7 @@
     "check": "node --check app.js && node --check protocol-parser.js && node --check main.js && node --check preload.js",
     "test": "node ./scripts/test-protocol-parser.js",
     "clean": "powershell -ExecutionPolicy Bypass -File ./scripts/clean.ps1",
+    "compact:win": "powershell -ExecutionPolicy Bypass -File ./scripts/compact-win.ps1",
     "pack:win": "powershell -ExecutionPolicy Bypass -File ./scripts/package-win.ps1",
     "publish:github": "powershell -ExecutionPolicy Bypass -File ./scripts/publish-github.ps1",
     "release:github": "powershell -ExecutionPolicy Bypass -File ./scripts/publish-github.ps1 -Release"

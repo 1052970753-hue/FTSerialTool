@@ -34,6 +34,12 @@ npm run pack:win
 
 `dist/FTSerialTool-win32-x64`
 
+打包脚本会删除非 Windows x64 的串口驱动，并使用 Windows LZX 透明压缩减少磁盘占用。也可以单独运行：
+
+```powershell
+npm run compact:win
+```
+
 ## 发布更新
 
 更新 `package.json` 中的版本号后创建对应标签，例如：

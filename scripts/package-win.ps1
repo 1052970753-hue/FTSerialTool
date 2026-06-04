@@ -49,4 +49,13 @@ try {
 
 Remove-Item -LiteralPath (Join-Path $appDir "package-lock.json") -Force
 
+$prebuilds = Join-Path $appDir "node_modules\@serialport\bindings-cpp\prebuilds"
+if (Test-Path $prebuilds) {
+  Get-ChildItem -LiteralPath $prebuilds -Directory |
+    Where-Object { $_.Name -ne "win32-x64" } |
+    Remove-Item -Recurse -Force
+}
+
+& (Join-Path $PSScriptRoot "compact-win.ps1")
+
 Write-Host "Created $out\FTSerialTool.exe"
