@@ -471,15 +471,11 @@ textarea {
 
 .group-row {
   display: grid;
-  grid-template-columns: minmax(104px, 0.8fr) 96px minmax(120px, 1fr) auto auto;
+  grid-template-columns: minmax(160px, 1fr) 110px auto auto;
   gap: 6px;
   padding: 7px 8px;
   border-bottom: 1px solid var(--line);
   background: #fff;
-}
-
-.group-row input {
-  padding: 0 8px;
 }
 
 .group-row select {

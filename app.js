@@ -55,7 +55,6 @@ const els = {
   toolSettingsModal: $("#toolSettingsModal"),
   profileSelect: $("#profileSelect"),
   profileMode: $("#profileMode"),
-  groupName: $("#groupName"),
   importFile: $("#importFile"),
   rxCount: $("#rxCount"),
   txCount: $("#txCount"),
@@ -1570,7 +1569,6 @@ function pulsePacketField(packetIndex, fieldIndex) {
 }
 
 function renderAll() {
-  els.groupName.value = state.profile.groupName;
   if (els.profileMode) els.profileMode.value = state.profile.protocolMode || "custom";
   renderProfileSelect();
   updateProtocolModeUi();
@@ -1625,7 +1623,7 @@ async function editParserSettings(index) {
 }
 
 function exportProfile() {
-  state.profile.groupName = els.groupName.value || "未命名";
+  state.profile.groupName ||= "未命名";
   const blob = new Blob([JSON.stringify(state.profile, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -2194,7 +2192,6 @@ document.addEventListener("input", (event) => {
     const packet = state.profile.packets[packetIndex];
     if (packet) packet.cycleMs = Math.max(10, Number(target.value) || 100);
   }
-  if (target.id === "groupName") setProfileName(target.value);
   if (target.id === "profileMode") {
     state.profile.protocolMode = target.value;
     updateProtocolModeUi();
