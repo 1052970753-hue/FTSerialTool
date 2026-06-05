@@ -12,7 +12,7 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 Copy-Item -Path (Join-Path $electronDist "*") -Destination $out -Recurse -Force
 Rename-Item -LiteralPath (Join-Path $out "electron.exe") -NewName "FTSerialTool.exe"
 
-# Hardware acceleration is disabled in main.js, so these GPU fallback libraries are unused.
+# Hardware acceleration is disabled in src/main.js, so these GPU fallback libraries are unused.
 @(
   "libGLESv2.dll",
   "libEGL.dll",
@@ -40,20 +40,9 @@ if (Test-Path $defaultApp) {
 $appDir = Join-Path $out "resources\app"
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 
-$files = @(
-  "index.html",
-  "styles.css",
-  "app.js",
-  "protocol-parser.js",
-  "main.js",
-  "preload.js",
-  "package.json",
-  "package-lock.json"
-)
-
-foreach ($file in $files) {
-  Copy-Item -LiteralPath (Join-Path $root $file) -Destination $appDir -Force
-}
+Copy-Item -LiteralPath (Join-Path $root "src") -Destination $appDir -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $root "package.json") -Destination $appDir -Force
+Copy-Item -LiteralPath (Join-Path $root "package-lock.json") -Destination $appDir -Force
 
 Push-Location $appDir
 try {

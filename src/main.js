@@ -2,7 +2,7 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell, net: electron
 const fs = require("fs");
 const path = require("path");
 const nodeNet = require("net");
-const { SerialPort } = require("serialport");
+let SerialPort;
 
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=256");
 app.commandLine.appendSwitch("renderer-process-limit", "1");
@@ -18,6 +18,11 @@ let updateChecking = false;
 let downloadedUpdatePath = "";
 let pendingUpdateAsset = null;
 let workspaceView = "general";
+
+function getSerialPort() {
+  SerialPort ??= require("serialport").SerialPort;
+  return SerialPort;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -563,7 +568,7 @@ function configureUpdates(settings) {
 }
 
 ipcMain.handle("usb:list", async () => {
-  const ports = await SerialPort.list();
+  const ports = await getSerialPort().list();
   return ports.map((port) => ({
     path: port.path,
     label: serialPortLabel(port),
@@ -580,7 +585,7 @@ ipcMain.handle("usb:connect", async (event, { path: portPath, baudRate }) => {
   if (!portPath) throw new Error("请选择 USB 串口");
 
   return new Promise((resolve, reject) => {
-    const port = new SerialPort({
+    const port = new (getSerialPort())({
       path: portPath,
       baudRate: Number(baudRate) || 115200,
       autoOpen: false,

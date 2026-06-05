@@ -7,6 +7,7 @@ $workDir = Join-Path $root "dist\.portable-build"
 $nsisArchive = Join-Path $workDir "nsis.zip"
 $nsisDir = Join-Path $workDir "nsis"
 $config = Join-Path $workDir "portable.nsi"
+$packageVersion = (Get-Content (Join-Path $root "package.json") -Raw | ConvertFrom-Json).version
 
 if (-not (Test-Path (Join-Path $packageDir "FTSerialTool.exe"))) {
   & (Join-Path $PSScriptRoot "package-win.ps1")
@@ -34,19 +35,21 @@ if (-not $makeNsis) {
 
 $nsisSource = $packageDir.Replace("\", "\\")
 $nsisOutput = $output.Replace("\", "\\")
+$cacheDir = "`$LOCALAPPDATA\FTSerialTool\portable-$packageVersion"
 $nsisScript = @"
 Unicode true
 SilentInstall silent
 RequestExecutionLevel user
-SetCompressor /SOLID lzma
+SetCompressor /FINAL zlib
 Name "FTSerialTool Portable"
 OutFile "$nsisOutput"
 
 Section
-  InitPluginsDir
-  SetOutPath "`$PLUGINSDIR\FTSerialTool"
+  IfFileExists "$cacheDir\FTSerialTool.exe" launch
+  SetOutPath "$cacheDir"
   File /r "$nsisSource\*"
-  ExecWait '"`$PLUGINSDIR\FTSerialTool\FTSerialTool.exe"'
+launch:
+  Exec '"$cacheDir\FTSerialTool.exe"'
 SectionEnd
 "@
 [System.IO.File]::WriteAllText($config, $nsisScript, [System.Text.UTF8Encoding]::new($false))

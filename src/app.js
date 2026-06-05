@@ -148,6 +148,7 @@ const state = {
   bleNotifyCharacteristic: null,
   connected: false,
   reading: false,
+  receivePaused: false,
   rxBytes: 0,
   txBytes: 0,
   logRows: [],
@@ -275,7 +276,7 @@ function bytesText(bytes) {
 }
 
 function addLog(kind, payload, options = {}) {
-  if (els.pauseReceive.checked && kind === "rx") return;
+  if (state.receivePaused && kind === "rx") return;
   const bytes = payload instanceof Uint8Array ? payload : null;
   const text = bytes ? (els.hexView.checked ? toHex(bytes) : bytesText(bytes)) : String(payload);
   const row = { kind, time: nowLabel(), text, css: options.css || "" };
@@ -528,7 +529,8 @@ function initTransports() {
     });
     window.ftTcpSerial.onError((message) => addLog("error", message, { css: "error" }));
   }
-  updateLinkTypeUi();
+  updateLinkTypeUi(false);
+  setTimeout(refreshUsbPorts, 300);
 }
 
 async function refreshUsbPorts() {
@@ -554,7 +556,7 @@ async function refreshUsbPorts() {
   }
 }
 
-function updateLinkTypeUi() {
+function updateLinkTypeUi(refreshPorts = true) {
   const isTcp = els.linkType.value === "tcp";
   const isUsb = els.linkType.value === "usb";
   $$(".network-field").forEach((el) => el.classList.toggle("hidden", !isTcp));
@@ -563,7 +565,7 @@ function updateLinkTypeUi() {
   updateBaudRateUi();
   if (els.linkType.value === "ble") {
     els.portSelect.innerHTML = "<option>BLE UART / Nordic NUS</option>";
-  } else if (els.linkType.value === "usb") {
+  } else if (els.linkType.value === "usb" && refreshPorts) {
     refreshUsbPorts();
   }
 }
@@ -880,6 +882,15 @@ function renderPacketCycleControls() {
   [els.dataPacketCycleControls, els.curvePacketCycleControls].forEach((container) => {
     if (container) container.innerHTML = html;
   });
+}
+
+function updatePauseReceiveButton() {
+  if (!els.pauseReceive) return;
+  const paused = state.receivePaused;
+  const zh = state.language !== "en";
+  els.pauseReceive.textContent = paused ? (zh ? "继续" : "Resume") : (zh ? "暂停" : "Pause");
+  els.pauseReceive.classList.toggle("active", paused);
+  els.pauseReceive.setAttribute("aria-pressed", String(paused));
 }
 
 function stopPacketCycle(packetIndex, updatePacket = true) {
@@ -1958,6 +1969,7 @@ const toolText = {
   zh: {
     buttons: {
       "#connectBtn": "打开", "#demoBtn": "模拟数据", "#clearLogBtn": "清空", "#saveLogBtn": "保存数据",
+      "#pauseReceive": "暂停",
       "#importBtn": "导入", "#exportBtn": "导出", "#renameProfileBtn": "重命名", "#newProfileBtn": "新建",
       "#addPacketBtn": "添加包", "#addFieldBtn": "加字段", "#addParserBtn": "添加规则", "#addParserFieldBtn": "加字段",
       "#pauseCurveBtn": "暂停曲线", "#clearCurveBtn": "清空曲线", "#measureCurveBtn": "测量", "#expandCurveBtn": "放大",
@@ -1972,6 +1984,7 @@ const toolText = {
   en: {
     buttons: {
       "#connectBtn": "Open", "#demoBtn": "Demo Data", "#clearLogBtn": "Clear", "#saveLogBtn": "Save Data",
+      "#pauseReceive": "Pause",
       "#importBtn": "Import", "#exportBtn": "Export", "#renameProfileBtn": "Rename", "#newProfileBtn": "New",
       "#addPacketBtn": "Add Packet", "#addFieldBtn": "Add Field", "#addParserBtn": "Add Rule", "#addParserFieldBtn": "Add Field",
       "#pauseCurveBtn": "Pause Curve", "#clearCurveBtn": "Clear Curve", "#measureCurveBtn": "Measure", "#expandCurveBtn": "Expand",
@@ -2002,6 +2015,7 @@ function applyToolLanguage(language, notifyMain = true) {
     const button = document.querySelector(selector);
     if (button && !button.classList.contains("active")) button.textContent = value;
   });
+  updatePauseReceiveButton();
   document.querySelectorAll(".small-tab").forEach((button, index) => {
     if (text.tabs[index]) button.textContent = text.tabs[index];
   });
@@ -2181,6 +2195,10 @@ document.addEventListener("click", async (event) => {
     renderLog();
   }
   if (target.id === "saveLogBtn") saveText("serial-log.txt", state.logRows.map((r) => `${r.time} ${r.kind.toUpperCase()} ${r.text}`).join("\n"));
+  if (target.id === "pauseReceive") {
+    state.receivePaused = !state.receivePaused;
+    updatePauseReceiveButton();
+  }
   if (target.id === "sendRawBtn") sendRaw();
   if (target.id === "clearSendBtn") els.sendText.value = "";
   if (target.id === "terminalSendBtn") sendTerminal();
