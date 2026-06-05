@@ -254,6 +254,29 @@
         </section>
       </div>
 
+      <div class="modal-layer hidden" id="updateProgressModal">
+        <section class="update-progress-dialog">
+          <div class="tool-settings-head">
+            <h2>软件更新</h2>
+            <button id="updateProgressClose">稍后</button>
+          </div>
+          <div class="update-stage">
+            <div class="update-stage-head"><strong>下载更新</strong><span id="updateDownloadPercent">0%</span></div>
+            <progress id="updateDownloadProgress" max="100" value="0"></progress>
+            <span id="updateDownloadDetail">等待下载</span>
+          </div>
+          <div class="update-stage">
+            <div class="update-stage-head"><strong>更新进度</strong><span id="updateInstallPercent">0%</span></div>
+            <progress id="updateInstallProgress" max="100" value="0"></progress>
+            <span id="updateInstallDetail">下载完成后自动校验并准备更新</span>
+          </div>
+          <div class="update-progress-actions">
+            <span id="updateProgressStatus">正在检查更新...</span>
+            <button id="installUpdateBtn" class="primary-btn" disabled>立即更新</button>
+          </div>
+        </section>
+      </div>
+
       <div class="modal-layer hidden" id="helpModal">
         <section class="settings-panel help-dialog">
           <div class="help-head">

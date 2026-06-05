@@ -15,6 +15,7 @@ let usbPort = null;
 let updateSettings = { repository: "", autoCheck: true };
 let updateTimer = null;
 let updateChecking = false;
+let downloadedUpdatePath = "";
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -219,7 +220,8 @@ async function fetchLatestRelease() {
 
 function selectReleaseAsset(release) {
   const assets = Array.isArray(release.assets) ? release.assets : [];
-  return assets.find((asset) => /FTSerialTool.*\.exe$/i.test(asset.name))
+  return assets.find((asset) => /FTSerialTool.*portable.*\.exe$/i.test(asset.name))
+    || assets.find((asset) => /FTSerialTool.*\.exe$/i.test(asset.name))
     || assets.find((asset) => /\.exe$/i.test(asset.name))
     || assets.find((asset) => /\.zip$/i.test(asset.name));
 }
@@ -254,8 +256,9 @@ async function checkForUpdates(manual = false) {
       await shell.openExternal(release.html_url);
       return;
     }
-    await downloadReleaseAsset(asset);
+    await downloadReleaseAssetWithProgress(asset);
   } catch (error) {
+    mainWindow?.setProgressBar(-1);
     sendUpdateStatus({ state: "error", message: error.message });
     if (manual) dialog.showErrorBox("检查更新失败", error.message);
   } finally {
@@ -316,6 +319,97 @@ function downloadReleaseAsset(asset) {
     });
     request.end();
   });
+}
+
+function downloadReleaseAssetWithProgress(asset) {
+  return new Promise((resolve, reject) => {
+    const target = path.join(app.getPath("downloads"), asset.name);
+    downloadedUpdatePath = "";
+    const output = fs.createWriteStream(target);
+    const request = electronNet.request({ url: asset.url || asset.browser_download_url });
+    request.setHeader("User-Agent", `FTSerialTool/${app.getVersion()}`);
+    if (asset.url) request.setHeader("Accept", "application/octet-stream");
+    request.on("response", (response) => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        output.close();
+        fs.rm(target, { force: true }, () => {});
+        reject(new Error(`更新下载失败 (${response.statusCode})`));
+        return;
+      }
+      const total = Number(response.headers["content-length"]) || Number(asset.size) || 0;
+      let received = 0;
+      let speedReceived = 0;
+      let speedTime = Date.now();
+      response.on("data", (chunk) => {
+        received += chunk.length;
+        const progress = total ? received / total : 0;
+        const now = Date.now();
+        const elapsed = Math.max(1, now - speedTime);
+        const speed = ((received - speedReceived) * 1000) / elapsed;
+        if (elapsed >= 500) {
+          speedReceived = received;
+          speedTime = now;
+        }
+        mainWindow?.setProgressBar(progress || -1);
+        sendUpdateStatus({ state: "downloading", message: `正在下载 ${asset.name}`, progress, received, total, speed });
+      });
+      response.pipe(output);
+      response.on("error", reject);
+      output.on("finish", async () => {
+        output.close();
+        sendUpdateStatus({ state: "verifying", message: "下载完成，正在校验更新文件", progress: 1, updateProgress: 0 });
+        try {
+          await verifyUpdateFile(target, total);
+          downloadedUpdatePath = target;
+          mainWindow?.setProgressBar(1);
+          sendUpdateStatus({ state: "ready", message: "更新准备完成，可以立即更新", progress: 1, updateProgress: 1, target });
+          resolve(target);
+        } catch (error) {
+          fs.rm(target, { force: true }, () => {});
+          reject(error);
+        }
+      });
+    });
+    output.on("error", reject);
+    request.on("error", (error) => {
+      mainWindow?.setProgressBar(-1);
+      output.close();
+      fs.rm(target, { force: true }, () => {});
+      reject(error);
+    });
+    request.end();
+  });
+}
+
+function verifyUpdateFile(target, expectedSize) {
+  return new Promise((resolve, reject) => {
+    const actualSize = fs.statSync(target).size;
+    if (expectedSize && actualSize !== expectedSize) {
+      reject(new Error(`更新文件大小不完整：${actualSize}/${expectedSize}`));
+      return;
+    }
+    let checked = 0;
+    const input = fs.createReadStream(target);
+    input.on("data", (chunk) => {
+      checked += chunk.length;
+      const updateProgress = actualSize ? checked / actualSize : 0;
+      mainWindow?.setProgressBar(updateProgress);
+      sendUpdateStatus({ state: "verifying", message: "正在校验并准备更新", progress: 1, updateProgress, checked, total: actualSize });
+    });
+    input.on("end", resolve);
+    input.on("error", reject);
+  });
+}
+
+async function installDownloadedUpdate() {
+  if (!downloadedUpdatePath || !fs.existsSync(downloadedUpdatePath)) {
+    throw new Error("没有可安装的更新文件，请重新检查更新");
+  }
+  sendUpdateStatus({ state: "installing", message: "正在启动新版本，旧版本即将关闭", progress: 1, updateProgress: 1 });
+  const error = await shell.openPath(downloadedUpdatePath);
+  if (error) throw new Error(error);
+  setTimeout(() => app.quit(), 800);
+  return true;
 }
 
 function configureUpdates(settings) {
@@ -405,6 +499,7 @@ ipcMain.handle("app:set-language", async (_event, language) => {
 
 ipcMain.handle("app:configure-updates", async (_event, settings) => configureUpdates(settings));
 ipcMain.handle("app:check-updates", async () => checkForUpdates(true));
+ipcMain.handle("app:install-update", async () => installDownloadedUpdate());
 
 ipcMain.handle("tcp:connect", async (event, { host, port }) => {
   closeTcpSocket();
