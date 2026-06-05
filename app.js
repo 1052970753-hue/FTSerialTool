@@ -65,6 +65,15 @@ const els = {
   githubRepository: $("#githubRepository"),
   autoCheckUpdates: $("#autoCheckUpdates"),
   updateStatus: $("#updateStatus"),
+  updateProgressModal: $("#updateProgressModal"),
+  updateDownloadProgress: $("#updateDownloadProgress"),
+  updateDownloadPercent: $("#updateDownloadPercent"),
+  updateDownloadDetail: $("#updateDownloadDetail"),
+  updateInstallProgress: $("#updateInstallProgress"),
+  updateInstallPercent: $("#updateInstallPercent"),
+  updateInstallDetail: $("#updateInstallDetail"),
+  updateProgressStatus: $("#updateProgressStatus"),
+  installUpdateBtn: $("#installUpdateBtn"),
 };
 
 const fieldTypes = [
@@ -2058,7 +2067,43 @@ window.ftApp?.onProtocolAnalysis(openProtocolAnalysis);
 window.ftApp?.onLanguage((language) => applyToolLanguage(language, false));
 window.ftApp?.onUpdateStatus((status) => {
   if (els.updateStatus) els.updateStatus.textContent = status?.message || "更新状态未知";
+  renderUpdateProgress(status);
 });
+
+function formatUpdateBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${value} B`;
+}
+
+function setUpdateProgress(element, label, value) {
+  const percent = Math.max(0, Math.min(100, Math.round((Number(value) || 0) * 100)));
+  if (element) element.value = percent;
+  if (label) label.textContent = `${percent}%`;
+}
+
+function renderUpdateProgress(status = {}) {
+  const activeStates = ["downloading", "verifying", "ready", "installing", "error"];
+  if (activeStates.includes(status.state)) els.updateProgressModal?.classList.remove("hidden");
+  setUpdateProgress(els.updateDownloadProgress, els.updateDownloadPercent, status.progress);
+  setUpdateProgress(els.updateInstallProgress, els.updateInstallPercent, status.updateProgress);
+  if (els.updateProgressStatus) els.updateProgressStatus.textContent = status.message || "正在准备更新";
+  if (els.updateDownloadDetail && status.state === "downloading") {
+    const size = status.total ? `${formatUpdateBytes(status.received)} / ${formatUpdateBytes(status.total)}` : formatUpdateBytes(status.received);
+    els.updateDownloadDetail.textContent = `${size} · ${formatUpdateBytes(status.speed)}/s`;
+  }
+  if (els.updateDownloadDetail && ["verifying", "ready", "installing"].includes(status.state)) {
+    els.updateDownloadDetail.textContent = "下载完成";
+  }
+  if (els.updateInstallDetail) {
+    if (status.state === "verifying") els.updateInstallDetail.textContent = `正在校验 ${formatUpdateBytes(status.checked)} / ${formatUpdateBytes(status.total)}`;
+    if (status.state === "ready") els.updateInstallDetail.textContent = "校验完成，更新文件已准备好";
+    if (status.state === "installing") els.updateInstallDetail.textContent = "正在启动新版本";
+    if (status.state === "error") els.updateInstallDetail.textContent = status.message || "更新失败";
+  }
+  if (els.installUpdateBtn) els.installUpdateBtn.disabled = status.state !== "ready";
+}
 
 document.addEventListener("click", async (event) => {
   const target = event.target;
@@ -2089,6 +2134,11 @@ document.addEventListener("click", async (event) => {
   if (target.id === "settingsModalCancel") closeNameModal(null);
   if (target.id === "settingsModalOk") closeNameModal(els.settingsModalInput.value);
   if (target.id === "toolSettingsClose" || target.id === "toolSettingsModal") els.toolSettingsModal?.classList.add("hidden");
+  if (target.id === "updateProgressClose") els.updateProgressModal?.classList.add("hidden");
+  if (target.id === "installUpdateBtn") {
+    target.disabled = true;
+    window.ftApp?.installUpdate().catch((error) => renderUpdateProgress({ state: "error", message: error.message }));
+  }
   if (target.id === "helpClose" || target.id === "helpModal") els.helpModal?.classList.add("hidden");
   if (target.id === "protocolAnalysisClose") closeProtocolAnalysis();
   if (target.id === "protocolAnalyzeBtn") analyzeProtocolSource();
