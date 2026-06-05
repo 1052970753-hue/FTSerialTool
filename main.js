@@ -12,10 +12,11 @@ app.disableHardwareAcceleration();
 let mainWindow;
 let tcpSocket = null;
 let usbPort = null;
-let updateSettings = { repository: "", autoCheck: true };
+let updateSettings = { repository: "", mirrorUrl: "", autoCheck: true };
 let updateTimer = null;
 let updateChecking = false;
 let downloadedUpdatePath = "";
+let pendingUpdateAsset = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -239,24 +240,16 @@ async function checkForUpdates(manual = false) {
       if (manual) dialog.showMessageBox(mainWindow, { type: "info", title: "检查更新", message: "当前已是最新版本", detail: `当前版本：${app.getVersion()}` });
       return;
     }
-    const asset = selectReleaseAsset(release);
-    sendUpdateStatus({ state: "available", message: `发现新版本 ${latest}` });
-    const choice = await dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "发现新版本",
-      message: `发现 FTSerialTool ${latest}`,
-      detail: `${release.body || "暂无更新说明"}\n\n当前版本：${app.getVersion()}`,
-      buttons: asset ? ["下载更新", "稍后"] : ["打开发布页面", "稍后"],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
+    pendingUpdateAsset = selectReleaseAsset(release);
+    sendUpdateStatus({
+      state: "available",
+      message: `发现新版本 ${latest}`,
+      latest,
+      current: app.getVersion(),
+      notes: release.body || "暂无更新说明",
+      size: pendingUpdateAsset?.size || 0,
+      releaseUrl: release.html_url,
     });
-    if (choice.response !== 0) return;
-    if (!asset) {
-      await shell.openExternal(release.html_url);
-      return;
-    }
-    await downloadReleaseAssetFast(asset);
   } catch (error) {
     mainWindow?.setProgressBar(-1);
     sendUpdateStatus({ state: "error", message: error.message });
@@ -432,6 +425,25 @@ async function downloadReleaseAssetFast(asset) {
   }
 }
 
+function mirroredAsset(asset) {
+  const mirrorUrl = String(updateSettings.mirrorUrl || "").trim().replace(/\/+$/, "");
+  if (!mirrorUrl) return asset;
+  return { ...asset, url: `${mirrorUrl}/${encodeURIComponent(asset.name)}`, browser_download_url: `${mirrorUrl}/${encodeURIComponent(asset.name)}` };
+}
+
+async function downloadPendingUpdate() {
+  if (!pendingUpdateAsset) throw new Error("没有待下载的新版本，请重新检查更新");
+  const mirrorUrl = String(updateSettings.mirrorUrl || "").trim();
+  if (!mirrorUrl) return downloadReleaseAssetFast(pendingUpdateAsset);
+  try {
+    sendUpdateStatus({ state: "downloading", message: "正在连接更新加速服务器", progress: 0, received: 0, total: pendingUpdateAsset.size || 0 });
+    return await downloadReleaseAssetFast(mirroredAsset(pendingUpdateAsset));
+  } catch {
+    sendUpdateStatus({ state: "downloading", message: "加速服务器不可用，正在切换 GitHub", progress: 0, received: 0, total: pendingUpdateAsset.size || 0 });
+    return downloadReleaseAssetFast(pendingUpdateAsset);
+  }
+}
+
 function downloadReleaseAssetWithProgress(asset) {
   return new Promise((resolve, reject) => {
     const target = path.join(app.getPath("downloads"), asset.name);
@@ -526,6 +538,7 @@ async function installDownloadedUpdate() {
 function configureUpdates(settings) {
   updateSettings = {
     repository: String(settings?.repository || "").trim(),
+    mirrorUrl: String(settings?.mirrorUrl || "").trim(),
     autoCheck: settings?.autoCheck !== false,
   };
   if (updateTimer) clearInterval(updateTimer);
@@ -610,6 +623,7 @@ ipcMain.handle("app:set-language", async (_event, language) => {
 
 ipcMain.handle("app:configure-updates", async (_event, settings) => configureUpdates(settings));
 ipcMain.handle("app:check-updates", async () => checkForUpdates(true));
+ipcMain.handle("app:download-update", async () => downloadPendingUpdate());
 ipcMain.handle("app:install-update", async () => installDownloadedUpdate());
 
 ipcMain.handle("tcp:connect", async (event, { host, port }) => {

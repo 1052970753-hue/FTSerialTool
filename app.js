@@ -63,6 +63,7 @@ const els = {
   maxCurvePoints: $("#maxCurvePoints"),
   timeFormat: $("#timeFormat"),
   githubRepository: $("#githubRepository"),
+  updateMirrorUrl: $("#updateMirrorUrl"),
   autoCheckUpdates: $("#autoCheckUpdates"),
   updateStatus: $("#updateStatus"),
   updateProgressModal: $("#updateProgressModal"),
@@ -73,7 +74,11 @@ const els = {
   updateInstallPercent: $("#updateInstallPercent"),
   updateInstallDetail: $("#updateInstallDetail"),
   updateProgressStatus: $("#updateProgressStatus"),
-  installUpdateBtn: $("#installUpdateBtn"),
+  updateActionBtn: $("#updateActionBtn"),
+  updateAvailableInfo: $("#updateAvailableInfo"),
+  updateAvailableTitle: $("#updateAvailableTitle"),
+  updateVersionDetail: $("#updateVersionDetail"),
+  updateReleaseNotes: $("#updateReleaseNotes"),
 };
 
 const fieldTypes = [
@@ -2027,18 +2032,22 @@ function applyToolLanguage(language, notifyMain = true) {
 
 function updateSettingsFromStorage() {
   const repository = localStorage.getItem("ftGitHubRepository") || "https://github.com/1052970753-hue/FTSerialTool";
+  const mirrorUrl = localStorage.getItem("ftUpdateMirrorUrl") || "";
   const autoCheck = localStorage.getItem("ftAutoCheckUpdates") !== "false";
   if (els.githubRepository) els.githubRepository.value = repository;
+  if (els.updateMirrorUrl) els.updateMirrorUrl.value = mirrorUrl;
   if (els.autoCheckUpdates) els.autoCheckUpdates.checked = autoCheck;
-  window.ftApp?.configureUpdates({ repository, autoCheck });
+  window.ftApp?.configureUpdates({ repository, mirrorUrl, autoCheck });
 }
 
 function saveUpdateSettings() {
   const repository = els.githubRepository?.value.trim() || "";
+  const mirrorUrl = els.updateMirrorUrl?.value.trim() || "";
   const autoCheck = els.autoCheckUpdates?.checked !== false;
   localStorage.setItem("ftGitHubRepository", repository);
+  localStorage.setItem("ftUpdateMirrorUrl", mirrorUrl);
   localStorage.setItem("ftAutoCheckUpdates", String(autoCheck));
-  window.ftApp?.configureUpdates({ repository, autoCheck });
+  window.ftApp?.configureUpdates({ repository, mirrorUrl, autoCheck });
   if (els.updateStatus) els.updateStatus.textContent = repository ? "GitHub 更新设置已保存" : "请填写 GitHub 仓库地址";
 }
 
@@ -2084,8 +2093,15 @@ function setUpdateProgress(element, label, value) {
 }
 
 function renderUpdateProgress(status = {}) {
-  const activeStates = ["downloading", "verifying", "ready", "installing", "error"];
+  const activeStates = ["available", "downloading", "verifying", "ready", "installing", "error"];
   if (activeStates.includes(status.state)) els.updateProgressModal?.classList.remove("hidden");
+  els.updateProgressModal?.classList.toggle("update-available-mode", status.state === "available");
+  els.updateAvailableInfo?.classList.toggle("hidden", status.state !== "available");
+  if (status.state === "available") {
+    if (els.updateAvailableTitle) els.updateAvailableTitle.textContent = `发现新版本 ${status.latest || ""}`;
+    if (els.updateVersionDetail) els.updateVersionDetail.textContent = `当前版本 ${status.current || "-"} · 更新包 ${formatUpdateBytes(status.size)}`;
+    if (els.updateReleaseNotes) els.updateReleaseNotes.textContent = status.notes || "暂无更新说明";
+  }
   setUpdateProgress(els.updateDownloadProgress, els.updateDownloadPercent, status.progress);
   setUpdateProgress(els.updateInstallProgress, els.updateInstallPercent, status.updateProgress);
   if (els.updateProgressStatus) els.updateProgressStatus.textContent = status.message || "正在准备更新";
@@ -2102,7 +2118,11 @@ function renderUpdateProgress(status = {}) {
     if (status.state === "installing") els.updateInstallDetail.textContent = "正在启动新版本";
     if (status.state === "error") els.updateInstallDetail.textContent = status.message || "更新失败";
   }
-  if (els.installUpdateBtn) els.installUpdateBtn.disabled = status.state !== "ready";
+  if (els.updateActionBtn) {
+    els.updateActionBtn.disabled = !["available", "ready"].includes(status.state);
+    els.updateActionBtn.textContent = status.state === "ready" ? "立即更新" : "下载更新";
+    els.updateActionBtn.dataset.action = status.state === "ready" ? "install" : "download";
+  }
 }
 
 document.addEventListener("click", async (event) => {
@@ -2135,9 +2155,11 @@ document.addEventListener("click", async (event) => {
   if (target.id === "settingsModalOk") closeNameModal(els.settingsModalInput.value);
   if (target.id === "toolSettingsClose" || target.id === "toolSettingsModal") els.toolSettingsModal?.classList.add("hidden");
   if (target.id === "updateProgressClose") els.updateProgressModal?.classList.add("hidden");
-  if (target.id === "installUpdateBtn") {
+  if (target.id === "updateActionBtn") {
     target.disabled = true;
-    window.ftApp?.installUpdate().catch((error) => renderUpdateProgress({ state: "error", message: error.message }));
+    const action = target.dataset.action;
+    const task = action === "install" ? window.ftApp?.installUpdate() : window.ftApp?.downloadUpdate();
+    task?.catch((error) => renderUpdateProgress({ state: "error", message: error.message }));
   }
   if (target.id === "helpClose" || target.id === "helpModal") els.helpModal?.classList.add("hidden");
   if (target.id === "protocolAnalysisClose") closeProtocolAnalysis();
@@ -2532,6 +2554,7 @@ els.dashboardSkin.addEventListener("change", () => {
 els.toolLanguage?.addEventListener("change", () => applyToolLanguage(els.toolLanguage.value));
 els.helpLanguage.addEventListener("change", renderHelp);
 els.githubRepository?.addEventListener("change", saveUpdateSettings);
+els.updateMirrorUrl?.addEventListener("change", saveUpdateSettings);
 els.autoCheckUpdates?.addEventListener("change", saveUpdateSettings);
 
 document.addEventListener("pointerdown", (event) => {

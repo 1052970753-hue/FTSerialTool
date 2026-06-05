@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("ftApp", {
   onLanguage: (callback) => ipcRenderer.on("app:language", (_event, language) => callback(language)),
   configureUpdates: (settings) => ipcRenderer.invoke("app:configure-updates", settings),
   checkUpdates: () => ipcRenderer.invoke("app:check-updates"),
+  downloadUpdate: () => ipcRenderer.invoke("app:download-update"),
   installUpdate: () => ipcRenderer.invoke("app:install-update"),
   onUpdateStatus: (callback) => ipcRenderer.on("app:update-status", (_event, status) => callback(status)),
 });
