@@ -12,6 +12,21 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 Copy-Item -Path (Join-Path $electronDist "*") -Destination $out -Recurse -Force
 Rename-Item -LiteralPath (Join-Path $out "electron.exe") -NewName "FTSerialTool.exe"
 
+# Hardware acceleration is disabled in main.js, so these GPU fallback libraries are unused.
+@(
+  "libGLESv2.dll",
+  "libEGL.dll",
+  "d3dcompiler_47.dll",
+  "vk_swiftshader.dll",
+  "vk_swiftshader_icd.json",
+  "vulkan-1.dll"
+) | ForEach-Object {
+  $item = Join-Path $out $_
+  if (Test-Path $item) {
+    Remove-Item -LiteralPath $item -Force
+  }
+}
+
 $locales = Join-Path $out "locales"
 Get-ChildItem -LiteralPath $locales -File |
   Where-Object { $_.Name -notin @("en-US.pak", "zh-CN.pak") } |
@@ -55,6 +70,16 @@ if (Test-Path $prebuilds) {
     Where-Object { $_.Name -ne "win32-x64" } |
     Remove-Item -Recurse -Force
 }
+
+$nodeModules = Join-Path $appDir "node_modules"
+Get-ChildItem -LiteralPath $nodeModules -Recurse -File |
+  Where-Object { $_.Extension -in @(".h", ".hpp", ".c", ".cpp", ".ts", ".md", ".map") } |
+  Remove-Item -Force
+
+Get-ChildItem -LiteralPath $nodeModules -Recurse -Directory |
+  Where-Object { $_.Name -in @(".github", "docs", "doc", "test", "tests", "example", "examples") } |
+  Sort-Object FullName -Descending |
+  Remove-Item -Recurse -Force
 
 & (Join-Path $PSScriptRoot "compact-win.ps1")
 
