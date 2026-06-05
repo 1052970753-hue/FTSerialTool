@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const parser = require("../protocol-parser.js");
+const parser = require("../src/protocol-parser.js");
 
 const source = `
 typedef struct {

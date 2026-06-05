@@ -17,6 +17,8 @@ npm install
 npm start
 ```
 
+应用源码统一位于 `src/`，打包、测试和发布工具位于 `scripts/`。`dist/` 仅保存最新构建产物，不应直接修改。
+
 ## 检查与测试
 
 ```powershell
@@ -49,4 +51,4 @@ npm version patch --no-git-tag-version
 npm run release:github
 ```
 
-`release:github` 会通过 GitHub API 同步源码并创建版本标签。GitHub Actions 随后自动构建并发布 `FTSerialTool-win32-x64.zip`。软件通过 GitHub Releases 检查和下载新版本。
+`release:github` 会通过 GitHub API 同步源码并创建版本标签。GitHub Actions 随后自动构建并发布 `FTSerialTool-win32-x64.zip`。单文件便携版由维护者手动构建和发布，不会随普通更新自动改动。
