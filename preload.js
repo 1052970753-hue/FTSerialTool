@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("ftUsbSerial", {
 
 contextBridge.exposeInMainWorld("ftApp", {
   onMode: (callback) => ipcRenderer.on("app:mode", (_event, mode) => callback(mode)),
+  onWorkspaceView: (callback) => ipcRenderer.on("app:workspace-view", (_event, view) => callback(view)),
+  setWorkspaceView: (view) => ipcRenderer.invoke("app:set-workspace-view", view),
   onSettings: (callback) => ipcRenderer.on("app:settings", callback),
   onHelp: (callback) => ipcRenderer.on("app:help", callback),
   onProtocolAnalysis: (callback) => ipcRenderer.on("app:protocol-analysis", callback),

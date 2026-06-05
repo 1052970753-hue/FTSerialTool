@@ -260,6 +260,7 @@ textarea {
 .receive-panel,
 .side-panel,
 .send-panel,
+.vacuum-dashboard-panel,
 .settings-panel {
   min-width: 0;
   background: var(--panel);
@@ -267,6 +268,69 @@ textarea {
   border-radius: 10px;
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+
+.vacuum-dashboard-panel {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  min-height: 0;
+}
+
+#vacuumDashboardHost {
+  min-height: 0;
+  overflow: hidden;
+}
+
+#dataEditorHome {
+  display: none;
+}
+
+#vacuumDashboardHost #dataEditor {
+  display: block;
+}
+
+.main-grid.workspace-vacuum {
+  grid-template-columns: minmax(330px, 0.62fr) minmax(680px, 1.38fr);
+  grid-template-rows: minmax(150px, 3fr) minmax(300px, 7fr);
+}
+
+.main-grid.workspace-vacuum .receive-panel {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.main-grid.workspace-vacuum .receive-panel .panel-head {
+  min-height: 38px;
+  align-items: center;
+}
+
+.main-grid.workspace-vacuum .vacuum-dashboard-panel {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.main-grid.workspace-vacuum .side-panel {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.main-grid.workspace-vacuum .side-panel > .panel-head,
+.main-grid.workspace-vacuum .side-panel > .group-row,
+.main-grid.workspace-vacuum .side-panel > .tabs-line,
+.main-grid.workspace-vacuum .side-panel > #dataEditorHome,
+.main-grid.workspace-vacuum .send-panel,
+.main-grid.workspace-vacuum #sendEditor,
+.main-grid.workspace-vacuum #recvEditor {
+  display: none !important;
+}
+
+.main-grid.workspace-vacuum #curveEditor {
+  display: block;
+}
+
+.main-grid.workspace-vacuum #curveCanvas {
+  min-height: 0;
 }
 
 .receive-panel {
