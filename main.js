@@ -256,7 +256,7 @@ async function checkForUpdates(manual = false) {
       await shell.openExternal(release.html_url);
       return;
     }
-    await downloadReleaseAssetWithProgress(asset);
+    await downloadReleaseAssetFast(asset);
   } catch (error) {
     mainWindow?.setProgressBar(-1);
     sendUpdateStatus({ state: "error", message: error.message });
@@ -319,6 +319,117 @@ function downloadReleaseAsset(asset) {
     });
     request.end();
   });
+}
+
+function requestAssetRange(url, start, end, destination, onProgress) {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(destination);
+    const request = electronNet.request({ url });
+    request.setHeader("User-Agent", `FTSerialTool/${app.getVersion()}`);
+    request.setHeader("Accept", "application/octet-stream");
+    request.setHeader("Range", `bytes=${start}-${end}`);
+    request.on("response", (response) => {
+      if (response.statusCode !== 206) {
+        response.resume();
+        output.close();
+        reject(Object.assign(new Error(`服务器不支持分段下载 (${response.statusCode})`), { code: "RANGE_UNSUPPORTED" }));
+        return;
+      }
+      response.on("data", (chunk) => onProgress(chunk.length));
+      response.on("error", reject);
+      response.pipe(output);
+      output.on("finish", () => {
+        output.close();
+        resolve();
+      });
+    });
+    output.on("error", reject);
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+function probeRangeSupport(url) {
+  return new Promise((resolve) => {
+    const request = electronNet.request({ url });
+    request.setHeader("User-Agent", `FTSerialTool/${app.getVersion()}`);
+    request.setHeader("Accept", "application/octet-stream");
+    request.setHeader("Range", "bytes=0-0");
+    request.on("response", (response) => {
+      const supported = response.statusCode === 206;
+      response.resume();
+      response.on("end", () => resolve(supported));
+    });
+    request.on("error", () => resolve(false));
+    request.end();
+  });
+}
+
+async function mergeDownloadParts(parts, target) {
+  const output = await fs.promises.open(target, "w");
+  try {
+    for (const part of parts) {
+      for await (const chunk of fs.createReadStream(part)) await output.write(chunk);
+    }
+  } finally {
+    await output.close();
+  }
+}
+
+async function downloadReleaseAssetFast(asset) {
+  const total = Number(asset.size) || 0;
+  const url = asset.url || asset.browser_download_url;
+  if (!total || !url || !(await probeRangeSupport(url))) return downloadReleaseAssetWithProgress(asset);
+
+  const target = path.join(app.getPath("downloads"), asset.name);
+  const partDir = `${target}.parts`;
+  const partCount = 4;
+  const partSize = Math.ceil(total / partCount);
+  const parts = Array.from({ length: partCount }, (_, index) => path.join(partDir, `part-${index}`));
+  let received = 0;
+  let speedReceived = 0;
+  let speedTime = Date.now();
+  let lastReport = 0;
+  downloadedUpdatePath = "";
+  fs.rmSync(partDir, { recursive: true, force: true });
+  fs.mkdirSync(partDir, { recursive: true });
+
+  const report = (length) => {
+    received += length;
+    const now = Date.now();
+    if (now - lastReport < 150 && received < total) return;
+    const elapsed = Math.max(1, now - speedTime);
+    const speed = ((received - speedReceived) * 1000) / elapsed;
+    if (elapsed >= 500) {
+      speedReceived = received;
+      speedTime = now;
+    }
+    lastReport = now;
+    const progress = Math.min(1, received / total);
+    mainWindow?.setProgressBar(progress);
+    sendUpdateStatus({ state: "downloading", message: `正在多线程下载 ${asset.name}`, progress, received, total, speed });
+  };
+
+  try {
+    await Promise.all(parts.map((part, index) => {
+      const start = index * partSize;
+      const end = Math.min(total - 1, start + partSize - 1);
+      return requestAssetRange(url, start, end, part, report);
+    }));
+    await mergeDownloadParts(parts, target);
+    sendUpdateStatus({ state: "verifying", message: "下载完成，正在校验更新文件", progress: 1, updateProgress: 0 });
+    await verifyUpdateFile(target, total);
+    downloadedUpdatePath = target;
+    mainWindow?.setProgressBar(1);
+    sendUpdateStatus({ state: "ready", message: "更新准备完成，可以立即更新", progress: 1, updateProgress: 1, target });
+    return target;
+  } catch (error) {
+    fs.rmSync(target, { force: true });
+    if (error.code === "RANGE_UNSUPPORTED") return downloadReleaseAssetWithProgress(asset);
+    throw error;
+  } finally {
+    fs.rmSync(partDir, { recursive: true, force: true });
+  }
 }
 
 function downloadReleaseAssetWithProgress(asset) {
