@@ -621,6 +621,7 @@ ipcMain.handle("app:set-language", async (_event, language) => {
   return appLanguage;
 });
 
+ipcMain.handle("app:get-version", async () => app.getVersion());
 ipcMain.handle("app:configure-updates", async (_event, settings) => configureUpdates(settings));
 ipcMain.handle("app:check-updates", async () => checkForUpdates(true));
 ipcMain.handle("app:download-update", async () => downloadPendingUpdate());

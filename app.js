@@ -58,6 +58,7 @@ const els = {
   importFile: $("#importFile"),
   rxCount: $("#rxCount"),
   txCount: $("#txCount"),
+  appVersion: $("#appVersion"),
   toolLanguage: $("#toolLanguage"),
   maxLogLines: $("#maxLogLines"),
   maxCurvePoints: $("#maxCurvePoints"),
@@ -2720,4 +2721,7 @@ initTransports();
 renderAll();
 applyToolLanguage(state.language);
 updateSettingsFromStorage();
+window.ftApp?.getVersion().then((version) => {
+  if (els.appVersion) els.appVersion.textContent = `v${version}`;
+});
 drawCurve();
