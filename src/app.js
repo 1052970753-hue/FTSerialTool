@@ -2065,7 +2065,7 @@ function saveUpdateSettings() {
   localStorage.setItem("ftUpdateMirrorUrl", mirrorUrl);
   localStorage.setItem("ftAutoCheckUpdates", String(autoCheck));
   window.ftApp?.configureUpdates({ repository, mirrorUrl, autoCheck });
-  if (els.updateStatus) els.updateStatus.textContent = repository ? "GitHub 更新设置已保存" : "请填写 GitHub 仓库地址";
+  if (els.updateStatus) els.updateStatus.textContent = mirrorUrl ? "更新服务器设置已保存" : (repository ? "GitHub 更新设置已保存" : "请填写更新服务器或 GitHub 仓库地址");
 }
 
 function setAppMode(mode) {

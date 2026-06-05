@@ -1,5 +1,21 @@
 # FTSerialTool 更新加速服务器
 
+## 图形化服务端软件
+
+运行：
+
+```text
+dist\FTUpdateServer-win32-x64\FTUpdateServer.exe
+```
+
+在服务端窗口中选择 ZIP 或便携版 EXE，填写版本号和更新说明，然后点击“启动服务”。客户端在“设置 → 更新服务器”中填写窗口显示的地址后，即可直接从该服务端获取版本信息和更新文件。服务端不可用时，客户端会回退到 GitHub。
+
+构建服务端软件：
+
+```powershell
+npm run pack:update-server
+```
+
 ## 局域网本地部署
 
 在作为服务器的电脑中执行：
