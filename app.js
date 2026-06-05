@@ -182,6 +182,8 @@ const state = {
   profile: createDefaultProfile(),
   profiles: [],
   activeProfileIndex: 0,
+  workspaceView: localStorage.getItem("ftWorkspaceView") || "general",
+  generalEditor: "data",
 };
 
 state.profiles = [state.profile];
@@ -2067,7 +2069,38 @@ function setAppMode(mode) {
   $("#terminalMode").classList.toggle("hidden", mode !== "terminal");
 }
 
+function setWorkspaceView(view, notifyMain = true) {
+  const next = ["general", "vacuum", "ecm", "compressor"].includes(view) ? view : "general";
+  const workbench = $("#workbenchMode");
+  const dataEditor = $("#dataEditor");
+  const dataHome = $("#dataEditorHome");
+  const vacuumHost = $("#vacuumDashboardHost");
+  const vacuumPanel = $("#vacuumDashboardPanel");
+
+  if (next === "vacuum") {
+    const activeEditor = document.querySelector(".editor-pane.active")?.id?.replace("Editor", "");
+    if (activeEditor && activeEditor !== "curve") state.generalEditor = activeEditor;
+    vacuumHost?.appendChild(dataEditor);
+    vacuumPanel?.classList.remove("hidden");
+    workbench?.classList.add("workspace-vacuum");
+  } else {
+    if (dataEditor && dataHome?.parentNode) dataHome.parentNode.insertBefore(dataEditor, dataHome);
+    vacuumPanel?.classList.add("hidden");
+    workbench?.classList.remove("workspace-vacuum");
+    $$(".small-tab").forEach((button) => button.classList.toggle("active", button.dataset.editor === state.generalEditor));
+    $$(".editor-pane").forEach((pane) => pane.classList.toggle("active", pane.id === `${state.generalEditor}Editor`));
+  }
+
+  state.workspaceView = next;
+  localStorage.setItem("ftWorkspaceView", next);
+  document.body.dataset.workspaceView = next;
+  if (notifyMain) window.ftApp?.setWorkspaceView(next);
+  setAppMode("workbench");
+  setTimeout(drawCurve, 60);
+}
+
 window.ftApp?.onMode((mode) => setAppMode(mode));
+window.ftApp?.onWorkspaceView((view) => setWorkspaceView(view, false));
 window.ftApp?.onSettings(() => els.toolSettingsModal?.classList.remove("hidden"));
 window.ftApp?.onHelp(() => {
   renderHelp();
@@ -2721,6 +2754,7 @@ initTransports();
 renderAll();
 applyToolLanguage(state.language);
 updateSettingsFromStorage();
+setWorkspaceView(state.workspaceView);
 window.ftApp?.getVersion().then((version) => {
   if (els.appVersion) els.appVersion.textContent = `v${version}`;
 });

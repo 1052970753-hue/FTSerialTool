@@ -17,6 +17,7 @@ let updateTimer = null;
 let updateChecking = false;
 let downloadedUpdatePath = "";
 let pendingUpdateAsset = null;
+let workspaceView = "general";
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -43,6 +44,12 @@ function createWindow() {
 
 function switchMode(mode) {
   mainWindow?.webContents.send("app:mode", mode);
+}
+
+function switchWorkspaceView(view) {
+  workspaceView = view;
+  buildApplicationMenu();
+  mainWindow?.webContents.send("app:workspace-view", view);
 }
 
 let appLanguage = "zh";
@@ -79,6 +86,11 @@ function buildApplicationMenu() {
       submenu: [
         { label: en ? "Workbench" : "工作台", click: () => switchMode("workbench") },
         { label: en ? "Terminal" : "命令行", click: () => switchMode("terminal") },
+        { type: "separator" },
+        { label: en ? "General" : "通用", type: "radio", checked: workspaceView === "general", click: () => switchWorkspaceView("general") },
+        { label: en ? "Vacuum Cleaner" : "吸尘器", type: "radio", checked: workspaceView === "vacuum", click: () => switchWorkspaceView("vacuum") },
+        { label: en ? "ECM Fan" : "ECM风机", type: "radio", checked: workspaceView === "ecm", click: () => switchWorkspaceView("ecm") },
+        { label: en ? "Compressor" : "压缩机", type: "radio", checked: workspaceView === "compressor", click: () => switchWorkspaceView("compressor") },
         { type: "separator" },
         { role: "reload", label: en ? "Reload" : "刷新" },
         { role: "togglefullscreen", label: en ? "Full Screen" : "全屏" },
@@ -622,6 +634,11 @@ ipcMain.handle("app:set-language", async (_event, language) => {
 });
 
 ipcMain.handle("app:get-version", async () => app.getVersion());
+ipcMain.handle("app:set-workspace-view", async (_event, view) => {
+  workspaceView = ["general", "vacuum", "ecm", "compressor"].includes(view) ? view : "general";
+  buildApplicationMenu();
+  return workspaceView;
+});
 ipcMain.handle("app:configure-updates", async (_event, settings) => configureUpdates(settings));
 ipcMain.handle("app:check-updates", async () => checkForUpdates(true));
 ipcMain.handle("app:download-update", async () => downloadPendingUpdate());
