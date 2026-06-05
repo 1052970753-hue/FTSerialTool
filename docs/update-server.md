@@ -14,16 +14,16 @@ npm run serve:updates
 http://192.168.5.74:8765/FTSerialTool
 ```
 
-本地服务直接提供 `dist/FTSerialTool-portable-x64.exe`，并支持四路 Range 分段下载。发布新版本后重新生成便携版，再重启本地服务即可。
+本地服务自动提供 `dist/FTSerialTool-win32-x64.zip` 和 `dist/FTSerialTool-portable-x64.exe` 中实际存在的更新文件，并支持四路 Range 分段下载。普通更新只需要同步 GitHub Release 中的同名 ZIP 文件。
 
 软件仍从 GitHub Releases 检查版本号和读取更新说明。加速服务器只负责提供更新文件，因此可以使用任意支持 HTTPS 和 Range 分段下载的静态文件服务。
 
 ## 文件目录
 
-将最新单文件便携版上传到服务器，并保持文件名不变：
+将 GitHub Release 中的更新 ZIP 原样上传到服务器，并保持文件名不变：
 
 ```text
-https://update.example.com/FTSerialTool/FTSerialTool-portable-x64.exe
+https://update.example.com/FTSerialTool/FTSerialTool-win32-x64.zip
 ```
 
 然后在 FTSerialTool 的“设置”中填写：
@@ -53,11 +53,11 @@ server {
 把文件放到：
 
 ```text
-/srv/updates/FTSerialTool/FTSerialTool-portable-x64.exe
+/srv/updates/FTSerialTool/FTSerialTool-win32-x64.zip
 ```
 
 Nginx 默认支持 Range 分段下载。建议启用 HTTPS，并确保服务器带宽足够。
 
 ## 发布流程
 
-每次 GitHub 新版本构建完成后，将 Release 中的 `FTSerialTool-portable-x64.exe` 上传并覆盖加速服务器上的同名文件即可。
+每次 GitHub 新版本构建完成后，将 Release 中的 `FTSerialTool-win32-x64.zip` 下载到 `dist/` 并覆盖同名文件，再重启本地更新服务即可。文件必须与 GitHub Release 资产保持一致。
