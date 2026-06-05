@@ -1460,6 +1460,33 @@ textarea {
   gap: 7px;
 }
 
+.update-available {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid #b8ddd9;
+  border-radius: 6px;
+  background: #f1faf9;
+}
+
+.update-available span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.update-available pre {
+  max-height: 150px;
+  margin: 2px 0 0;
+  overflow: auto;
+  font: inherit;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.update-available-mode .update-stage {
+  display: none;
+}
+
 .update-stage-head,
 .update-progress-actions {
   display: flex;
