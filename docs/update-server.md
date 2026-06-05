@@ -1,5 +1,21 @@
 # FTSerialTool 更新加速服务器
 
+## 局域网本地部署
+
+在作为服务器的电脑中执行：
+
+```powershell
+npm run serve:updates
+```
+
+服务默认监听 `8765` 端口，并自动显示局域网更新地址。在其他同一局域网电脑的软件设置中填写该地址，例如：
+
+```text
+http://192.168.5.74:8765/FTSerialTool
+```
+
+本地服务直接提供 `dist/FTSerialTool-portable-x64.exe`，并支持四路 Range 分段下载。发布新版本后重新生成便携版，再重启本地服务即可。
+
 软件仍从 GitHub Releases 检查版本号和读取更新说明。加速服务器只负责提供更新文件，因此可以使用任意支持 HTTPS 和 Range 分段下载的静态文件服务。
 
 ## 文件目录

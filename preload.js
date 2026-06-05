@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("ftApp", {
   onSettings: (callback) => ipcRenderer.on("app:settings", callback),
   onHelp: (callback) => ipcRenderer.on("app:help", callback),
   onProtocolAnalysis: (callback) => ipcRenderer.on("app:protocol-analysis", callback),
+  getVersion: () => ipcRenderer.invoke("app:get-version"),
   setLanguage: (language) => ipcRenderer.invoke("app:set-language", language),
   onLanguage: (callback) => ipcRenderer.on("app:language", (_event, language) => callback(language)),
   configureUpdates: (settings) => ipcRenderer.invoke("app:configure-updates", settings),
