@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FTUpdateServer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="brand"><span>FT</span><div><h1>FTUpdateServer</h1><p>FTSerialTool 更新服务端</p></div></div>
+        <div class="server-state"><i id="stateDot"></i><strong id="stateText">已停止</strong></div>
+      </header>
+
+      <main>
+        <section class="publish-panel">
+          <div class="section-head"><h2>发布设置</h2><span id="saveStatus"></span></div>
+          <div class="form-grid">
+            <label>版本号<input id="version" placeholder="例如：1.2.5" /></label>
+            <label>监听端口<input id="port" type="number" min="1" max="65535" /></label>
+            <label class="wide">更新文件<div class="file-row"><input id="filePath" readonly /><button id="chooseFile">选择文件</button><button id="openFile">打开位置</button></div></label>
+            <label class="wide">更新说明<textarea id="notes" rows="4" placeholder="本次更新内容"></textarea></label>
+            <label class="check"><input id="autoStart" type="checkbox" /> 软件启动时自动开启更新服务</label>
+          </div>
+          <div class="actions"><button id="saveBtn">保存发布设置</button><button id="toggleBtn" class="primary">启动服务</button></div>
+        </section>
+
+        <section class="address-panel">
+          <div class="section-head"><h2>客户端更新地址</h2><span>填写到 FTSerialTool 的“更新服务器”中</span></div>
+          <div id="addresses" class="addresses"><span>服务启动后显示地址</span></div>
+        </section>
+
+        <section class="stats">
+          <article><span>请求次数</span><strong id="requests">0</strong></article>
+          <article><span>下载连接</span><strong id="downloads">0</strong></article>
+          <article><span>正在下载</span><strong id="active">0</strong></article>
+          <article><span>已传输</span><strong id="bytes">0 B</strong></article>
+        </section>
+      </main>
+      <footer><span id="footerStatus">等待配置更新文件</span><span>FTUpdateServer</span></footer>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

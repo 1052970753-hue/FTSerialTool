@@ -18,6 +18,7 @@
 | `node_modules/` | 依赖目录 | Electron、串口库及其依赖；由 `npm install` 生成。 |
 | `scripts/` | 工具目录 | 清理、打包、测试、发布和局域网更新服务脚本。 |
 | `src/` | 应用源码目录 | FTSerialTool 的 Electron 主进程、界面、样式与协议分析器源码。 |
+| `update-server-app/` | 更新服务端源码 | 独立的 FTUpdateServer 图形化更新服务软件。 |
 | `.gitignore` | Git 配置 | 指定不提交的依赖、构建产物和压缩包。 |
 | `package.json` | 项目配置 | 版本号、运行命令、依赖和项目基本信息。 |
 | `package-lock.json` | 依赖锁定 | 固定依赖版本，保证不同电脑安装结果一致。 |
@@ -56,6 +57,7 @@
 | `scripts/compact-win.ps1` | 对 Windows 解压版应用 LZX 磁盘压缩。 |
 | `scripts/package-win.ps1` | 生成精简后的 Windows x64 解压版。 |
 | `scripts/package-portable-win.ps1` | 生成单文件便携版；首次快速解压到版本缓存，后续直接启动缓存。 |
+| `scripts/package-update-server-win.ps1` | 生成独立的 FTUpdateServer Windows 服务端软件。 |
 | `scripts/publish-github.ps1` | 同步源码、创建标签并触发 GitHub Release。 |
 | `scripts/test-protocol-parser.js` | 协议分析器自动测试。 |
 | `scripts/update-server.js` | 在局域网提供支持 Range 分段下载的更新文件服务。 |

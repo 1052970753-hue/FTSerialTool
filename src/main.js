@@ -228,6 +228,29 @@ function sendUpdateStatus(status) {
 }
 
 async function fetchLatestRelease() {
+  const updateServerUrl = String(updateSettings.mirrorUrl || "").trim().replace(/\/+$/, "");
+  if (updateServerUrl) {
+    try {
+      const response = await fetch(`${updateServerUrl}/api/latest`, {
+        headers: { Accept: "application/json", "User-Agent": `FTSerialTool/${app.getVersion()}` },
+      });
+      if (!response.ok) throw new Error(`更新服务器请求失败 (${response.status})`);
+      const data = await response.json();
+      const asset = data.asset;
+      if (!data.version || !asset?.name || !asset?.url) throw new Error("更新服务器返回的数据不完整");
+      const assetUrl = new URL(asset.url, `${updateServerUrl}/`).toString();
+      return {
+        tag_name: data.version,
+        name: data.version,
+        body: data.notes || "",
+        html_url: updateServerUrl,
+        assets: [{ name: asset.name, size: Number(asset.size) || 0, browser_download_url: assetUrl }],
+        source: "update-server",
+      };
+    } catch (error) {
+      if (!updateSettings.repository) throw error;
+    }
+  }
   const { owner, repo } = parseGitHubRepository(updateSettings.repository);
   const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
     headers: { Accept: "application/vnd.github+json", "User-Agent": `FTSerialTool/${app.getVersion()}` },
@@ -443,6 +466,7 @@ async function downloadReleaseAssetFast(asset) {
 }
 
 function mirroredAsset(asset) {
+  if (asset.browser_download_url?.startsWith(String(updateSettings.mirrorUrl || "").trim().replace(/\/+$/, ""))) return asset;
   const mirrorUrl = String(updateSettings.mirrorUrl || "").trim().replace(/\/+$/, "");
   if (!mirrorUrl) return asset;
   return { ...asset, url: `${mirrorUrl}/${encodeURIComponent(asset.name)}`, browser_download_url: `${mirrorUrl}/${encodeURIComponent(asset.name)}` };
@@ -560,7 +584,7 @@ function configureUpdates(settings) {
   };
   if (updateTimer) clearInterval(updateTimer);
   updateTimer = null;
-  if (updateSettings.autoCheck && updateSettings.repository) {
+  if (updateSettings.autoCheck && (updateSettings.repository || updateSettings.mirrorUrl)) {
     setTimeout(() => checkForUpdates(false), 2500);
     updateTimer = setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000);
   }
