@@ -1,6 +1,136 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
+// ── 前端 HTTP 更新检查和下载（避免 Rust async 问题）──
+function compareVersions(a, b) {
+  const pa = String(a).replace(/^v/i, "").split(/[.-]/).map(Number);
+  const pb = String(b).replace(/^v/i, "").split(/[.-]/).map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  }
+  return 0;
+}
+
+let _pendingAsset = null;
+
+window._ftCheckUpdates = async function () {
+  const config = await window.ftApp.getUpdateConfig();
+  const currentVer = await window.ftApp.getVersion();
+  renderUpdateProgress({ state: "checking", message: "正在检查更新..." });
+
+  // 尝试局域网更新服务器
+  if (config.mirror_url) {
+    try {
+      const resp = await fetch(config.mirror_url.replace(/\/+$/, "") + "/api/latest", {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.version && compareVersions(data.version, currentVer) > 0) {
+          const assetUrl = config.mirror_url.replace(/\/+$/, "") + "/files/" + encodeURIComponent(data.asset?.name || "");
+          _pendingAsset = { name: data.asset?.name || "", url: assetUrl, size: data.asset?.size || 0 };
+          renderUpdateProgress({
+            state: "available",
+            message: "发现新版本 " + data.version,
+            latest: data.version,
+            current: currentVer,
+            size: data.asset?.size || 0,
+            notes: data.notes || "",
+          });
+          return;
+        } else {
+          renderUpdateProgress({ state: "current", message: "当前已是最新版本 " + currentVer });
+          return;
+        }
+      }
+    } catch (e) { /* fall through to GitHub */ }
+  }
+
+  // 尝试 GitHub
+  if (config.repository) {
+    try {
+      const m = config.repository.match(/github\.com[/:]([^/]+)\/([^/]+)$/i) || config.repository.match(/^([^/\s]+)\/([^/\s]+)$/);
+      if (!m) { renderUpdateProgress({ state: "error", message: "无效的 GitHub 仓库地址" }); return; }
+      const resp = await fetch("https://api.github.com/repos/" + m[1] + "/" + m[2] + "/releases/latest", {
+        headers: { Accept: "application/vnd.github+json" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const ver = (data.tag_name || data.name || "").replace(/^v/i, "");
+        if (compareVersions(ver, currentVer) > 0) {
+          const assets = data.assets || [];
+          const asset = assets.find(a => /portable.*\.exe$/i.test(a.name)) || assets.find(a => /\.exe$/i.test(a.name)) || assets.find(a => /\.zip$/i.test(a.name));
+          _pendingAsset = asset ? { name: asset.name, url: asset.browser_download_url, size: asset.size } : null;
+          renderUpdateProgress({
+            state: "available",
+            message: "发现新版本 " + ver,
+            latest: ver,
+            current: currentVer,
+            size: asset?.size || 0,
+            notes: data.body || "",
+          });
+        } else {
+          renderUpdateProgress({ state: "current", message: "当前已是最新版本 " + currentVer });
+        }
+      } else {
+        renderUpdateProgress({ state: "error", message: "GitHub 请求失败 (" + resp.status + ")" });
+      }
+    } catch (e) {
+      renderUpdateProgress({ state: "error", message: "网络错误: " + e.message });
+    }
+  } else {
+    renderUpdateProgress({ state: "current", message: "当前已是最新版本 " + currentVer });
+  }
+};
+
+window._ftDownloadUpdate = async function () {
+  if (!_pendingAsset) { renderUpdateProgress({ state: "error", message: "没有待下载的更新" }); return; }
+  const asset = _pendingAsset;
+  renderUpdateProgress({ state: "downloading", message: "正在下载 " + asset.name, progress: 0 });
+
+  try {
+    const resp = await fetch(asset.url);
+    if (!resp.ok) throw new Error("下载失败 (" + resp.status + ")");
+    const total = Number(resp.headers.get("content-length")) || asset.size || 0;
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      const progress = total ? received / total : 0;
+      renderUpdateProgress({
+        state: "downloading",
+        message: "正在下载 " + asset.name,
+        progress,
+        received,
+        total,
+      });
+    }
+
+    // 合并 chunks
+    const blob = new Blob(chunks);
+    const data = new Uint8Array(await blob.arrayBuffer());
+
+    // 保存到文件
+    const savedPath = await window.ftApp.saveUpdateFile(asset.name, data);
+    renderUpdateProgress({
+      state: "ready",
+      message: "下载完成: " + savedPath,
+      progress: 1,
+      target: savedPath,
+    });
+    _pendingAsset = null;
+  } catch (e) {
+    renderUpdateProgress({ state: "error", message: "下载失败: " + e.message });
+  }
+};
+
 const els = {
   linkType: $("#linkType"),
   portSelect: $("#portSelect"),
@@ -82,52 +212,62 @@ const els = {
   updateReleaseNotes: $("#updateReleaseNotes"),
 };
 
-const fieldTypes = [
-  ["const", "固定"],
-  ["uint8", "U8"],
-  ["int8", "I8"],
-  ["int16", "I16"],
-  ["uint16", "U16"],
-  ["uint32", "U32"],
-  ["int32", "I32"],
-  ["float", "Float"],
-  ["checksum8", "SUM8"],
-  ["crc16", "CRC16"],
-  ["tail", "尾"],
-];
+function getFieldTypeOptions() {
+  return [
+    ["const", t("typeConst")],
+    ["uint8", "U8"],
+    ["int8", "I8"],
+    ["int16", "I16"],
+    ["uint16", "U16"],
+    ["uint32", "U32"],
+    ["int32", "I32"],
+    ["float", "Float"],
+    ["checksum8", "SUM8"],
+    ["crc16", "CRC16"],
+    ["tail", t("typeTail")],
+  ];
+}
 
-const parserTypes = [
-  ["const", "固定"],
-  ["uint8", "U8"],
-  ["int8", "I8"],
-  ["uint16", "U16"],
-  ["int16", "I16"],
-  ["uint32", "U32"],
-  ["int32", "I32"],
-  ["float", "Float"],
-  ["checksum8", "SUM8"],
-  ["tail", "尾"],
-];
+function getParserTypeOptions() {
+  return [
+    ["const", t("typeConst")],
+    ["uint8", "U8"],
+    ["int8", "I8"],
+    ["uint16", "U16"],
+    ["int16", "I16"],
+    ["uint32", "U32"],
+    ["int32", "I32"],
+    ["float", "Float"],
+    ["checksum8", "SUM8"],
+    ["tail", t("typeTail")],
+  ];
+}
 
-const controlTypes = [
-  ["none", "无控件"],
-  ["slider", "滑条"],
-  ["switch", "开关"],
-  ["number", "数值框"],
-];
+function getControlTypeOptions() {
+  return [
+    ["none", t("ctrlNone")],
+    ["slider", t("ctrlSlider")],
+    ["switch", t("ctrlSwitch")],
+    ["number", t("ctrlNumber")],
+  ];
+}
 
-const switchModes = [
-  ["toggle", "自锁"],
-  ["momentary", "点动"],
-];
+function getSwitchModeOptions() {
+  return [
+    ["toggle", t("switchToggle")],
+    ["momentary", t("switchMomentary")],
+  ];
+}
 
-const widgetTypes = [
-  ["metric", "数值卡"],
-  ["gauge", "仪表"],
-  ["lamp", "指示灯"],
-  ["slider", "滑条"],
-  ["switch", "开关"],
-];
+function getWidgetTypeOptions() {
+  return [
+    ["metric", t("widgetMetric")],
+    ["gauge", t("widgetGauge")],
+    ["lamp", t("widgetLamp")],
+    ["slider", t("ctrlSlider")],
+    ["switch", t("ctrlSwitch")],
+  ];
+}
 
 const colors = ["#ff4d4f", "#20c997", "#46a3ff", "#f9c74f", "#b185ff", "#ff8f3d", "#5cd6d6", "#ef5da8"];
 const MAX_RECEIVE_BUFFER_BYTES = 256 * 1024;
@@ -257,7 +397,7 @@ function toHex(bytes) {
 
 function parseHex(text) {
   const clean = text.replace(/0x/gi, "").replace(/[^0-9a-fA-F]/g, "");
-  if (clean.length % 2) throw new Error("HEX长度必须是偶数");
+  if (clean.length % 2) throw new Error(t("hexOddLen"));
   const out = [];
   for (let i = 0; i < clean.length; i += 2) out.push(parseInt(clean.slice(i, i + 2), 16));
   return new Uint8Array(out);
@@ -344,7 +484,7 @@ async function connectSerial() {
     return;
   }
   if (!("serial" in navigator)) {
-    addLog("error", "当前浏览器不支持 Web Serial，请用 Chrome/Edge 打开 localhost 页面。", { css: "error" });
+    addLog("error", t("noWebSerial"), { css: "error" });
     return;
   }
   try {
@@ -354,8 +494,8 @@ async function connectSerial() {
     state.writer = state.port.writable.getWriter();
     state.connected = true;
     state.reading = true;
-    els.connectBtn.textContent = "关闭";
-    els.statusText.textContent = `USB串口已连接 ${baudRate}`;
+    els.connectBtn.textContent = t("close");
+    els.statusText.textContent = t("usbConnected")(baudRate);
     readLoop();
   } catch (err) {
     addLog("error", err.message, { css: "error" });
@@ -366,7 +506,7 @@ async function connectNativeUsbSerial() {
   const portPath = els.portSelect.value;
   const baudRate = selectedBaudRate();
   if (!portPath) {
-    addLog("error", "未找到 USB 串口，请检查设备连接和驱动。", { css: "error" });
+    addLog("error", t("noUsbPort"), { css: "error" });
     await refreshUsbPorts();
     return;
   }
@@ -374,9 +514,9 @@ async function connectNativeUsbSerial() {
     await window.ftUsbSerial.connect({ path: portPath, baudRate });
     state.connected = true;
     state.transport = "usb";
-    els.connectBtn.textContent = "关闭";
+    els.connectBtn.textContent = t("close");
     const selectedName = els.portSelect.selectedOptions[0]?.textContent || portPath;
-    els.statusText.textContent = `USB串口已连接 ${selectedName} @ ${baudRate}`;
+    els.statusText.textContent = t("usbConnected")(`${selectedName} @ ${baudRate}`);
   } catch (err) {
     addLog("error", err.message, { css: "error" });
   }
@@ -386,19 +526,19 @@ async function connectTcpSerial() {
   const host = els.tcpHost.value.trim();
   const port = Number(els.tcpPort.value);
   if (!host || !port) {
-    addLog("error", "请填写网络串口主机和端口。", { css: "error" });
+    addLog("error", t("fillTcpInfo"), { css: "error" });
     return;
   }
   if (!window.ftTcpSerial) {
-    addLog("error", "网络串口需要在 EXE 版本中使用；浏览器预览不开放原生 TCP。", { css: "error" });
+    addLog("error", t("tcpNeedExe"), { css: "error" });
     return;
   }
   try {
     await window.ftTcpSerial.connect({ host, port });
     state.connected = true;
     state.transport = "tcp";
-    els.connectBtn.textContent = "关闭";
-    els.statusText.textContent = `网络串口已连接 ${host}:${port}`;
+    els.connectBtn.textContent = t("close");
+    els.statusText.textContent = t("tcpConnected")(`${host}:${port}`);
   } catch (err) {
     addLog("error", err.message, { css: "error" });
   }
@@ -406,7 +546,7 @@ async function connectTcpSerial() {
 
 async function connectBleSerial() {
   if (!navigator.bluetooth) {
-    addLog("error", "当前环境不支持 Web Bluetooth，请使用 Chrome/Edge 或 EXE 版本。", { css: "error" });
+    addLog("error", t("noBle"), { css: "error" });
     return;
   }
   const nusService = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -428,8 +568,8 @@ async function connectBleSerial() {
     });
     state.connected = true;
     state.transport = "ble";
-    els.connectBtn.textContent = "关闭";
-    els.statusText.textContent = `蓝牙串口已连接 ${state.bleDevice.name || "BLE UART"}`;
+    els.connectBtn.textContent = t("close");
+    els.statusText.textContent = t("bleConnected")(state.bleDevice.name || "BLE UART");
   } catch (err) {
     addLog("error", err.message, { css: "error" });
   }
@@ -475,8 +615,8 @@ async function disconnectSerial() {
   state.bleWriteCharacteristic = null;
   state.bleNotifyCharacteristic = null;
   state.connected = false;
-  els.connectBtn.textContent = "打开";
-  els.statusText.textContent = "未连接";
+  els.connectBtn.textContent = t("open");
+  els.statusText.textContent = t("disconnected");
 }
 
 async function readLoop() {
@@ -512,8 +652,8 @@ function initTransports() {
     window.ftUsbSerial.onClose(() => {
       if (state.transport === "usb" && state.connected) {
         state.connected = false;
-        els.connectBtn.textContent = "打开";
-        els.statusText.textContent = "USB串口已断开";
+        els.connectBtn.textContent = t("open");
+        els.statusText.textContent = t("usbDisconnected");
       }
     });
     window.ftUsbSerial.onError((message) => addLog("error", message, { css: "error" }));
@@ -523,8 +663,8 @@ function initTransports() {
     window.ftTcpSerial.onClose(() => {
       if (state.transport === "tcp" && state.connected) {
         state.connected = false;
-        els.connectBtn.textContent = "打开";
-        els.statusText.textContent = "网络串口已断开";
+        els.connectBtn.textContent = t("open");
+        els.statusText.textContent = t("tcpDisconnected");
       }
     });
     window.ftTcpSerial.onError((message) => addLog("error", message, { css: "error" }));
@@ -536,23 +676,23 @@ function initTransports() {
 async function refreshUsbPorts() {
   if (els.linkType.value !== "usb") return;
   if (!window.ftUsbSerial) {
-    els.portSelect.innerHTML = "<option value=\"\">浏览器串口</option>";
+    els.portSelect.innerHTML = `<option value="">${t("browserPort")}</option>`;
     return;
   }
   const previous = els.portSelect.value;
-  els.portSelect.innerHTML = "<option value=\"\">正在搜索串口...</option>";
+  els.portSelect.innerHTML = `<option value="">${t("searchingPort")}</option>`;
   try {
     const ports = await window.ftUsbSerial.list();
     if (!ports.length) {
-      els.portSelect.innerHTML = "<option value=\"\">未发现 USB 串口</option>";
+      els.portSelect.innerHTML = `<option value="">${t("noPort")}</option>`;
       return;
     }
     els.portSelect.innerHTML = ports
       .map((port) => `<option value="${escapeHtml(port.path)}" ${port.path === previous ? "selected" : ""}>${escapeHtml(port.label)}</option>`)
       .join("");
   } catch (err) {
-    els.portSelect.innerHTML = "<option value=\"\">串口枚举失败</option>";
-    addLog("error", `USB串口枚举失败: ${err.message}`, { css: "error" });
+    els.portSelect.innerHTML = `<option value="">${t("portError")}</option>`;
+    addLog("error", t("portEnumFail")(err.message), { css: "error" });
   }
 }
 
@@ -830,7 +970,7 @@ function renderMetrics() {
   syncDashboardFromParserDefinitions();
   els.metricGrid.innerHTML = "";
   if (!state.dashboardWidgets.length) {
-    els.metricGrid.innerHTML = `<div class="dashboard-empty">请在“接收解析”字段中勾选“面板”，数据面板会自动显示。</div>`;
+    els.metricGrid.innerHTML = `<div class=”dashboard-empty”>${t('emptyMetric')}</div>`;
     return;
   }
   const frag = document.createDocumentFragment();
@@ -854,7 +994,7 @@ function renderSendDashboardControls() {
       .filter(({ field }) => field.control && field.control !== "none"));
   els.sendControlGrid.innerHTML = "";
   if (!controls.length) {
-    els.sendControlGrid.innerHTML = `<div class="dashboard-empty">请在“组包发送”字段中选择控件类型。</div>`;
+    els.sendControlGrid.innerHTML = `<div class=”dashboard-empty”>${t('emptySendCtrl')}</div>`;
     return;
   }
   const frag = document.createDocumentFragment();
@@ -874,11 +1014,11 @@ function renderPacketCycleControls() {
   const html = packet
     ? `<div class="packet-cycle-controls">
         <select data-cycle-packet-select>${packets.map((item, index) => `<option value="${index}" ${index === state.cyclePacketIndex ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select>
-        <label class="check-inline"><input type="checkbox" data-packet-cycle-enabled="${state.cyclePacketIndex}" ${packet.cycleEnabled ? "checked" : ""}>周期发送</label>
-        <label class="packet-cycle-period">周期(ms)<input type="number" min="10" step="10" value="${packet.cycleMs || 100}" data-packet-cycle-ms="${state.cyclePacketIndex}"></label>
-        <button data-packet-cycle-send="${state.cyclePacketIndex}">发送</button>
+        <label class="check-inline"><input type="checkbox" data-packet-cycle-enabled="${state.cyclePacketIndex}" ${packet.cycleEnabled ? "checked" : ""}>${t('cycleSend')}</label>
+        <label class="packet-cycle-period">${t('cycleMs')}<input type="number" min="10" step="10" value="${packet.cycleMs || 100}" data-packet-cycle-ms="${state.cyclePacketIndex}"></label>
+        <button data-packet-cycle-send="${state.cyclePacketIndex}">${t('send')}</button>
       </div>`
-    : `<span class="dashboard-hint">暂无发送包</span>`;
+    : `<span class="dashboard-hint">${t('noPacket')}</span>`;
   [els.dataPacketCycleControls, els.curvePacketCycleControls].forEach((container) => {
     if (container) container.innerHTML = html;
   });
@@ -887,8 +1027,7 @@ function renderPacketCycleControls() {
 function updatePauseReceiveButton() {
   if (!els.pauseReceive) return;
   const paused = state.receivePaused;
-  const zh = state.language !== "en";
-  els.pauseReceive.textContent = paused ? (zh ? "继续" : "Resume") : (zh ? "暂停" : "Pause");
+  els.pauseReceive.textContent = paused ? t('resume') : t('pause');
   els.pauseReceive.classList.toggle("active", paused);
   els.pauseReceive.setAttribute("aria-pressed", String(paused));
 }
@@ -924,15 +1063,15 @@ function startPacketCycle(packetIndex) {
 
 function renderSendDashboardControl({ packet, packetIndex, field, fieldIndex }) {
   const key = `${packetIndex}:${fieldIndex}`;
-  const label = `${packet.name} / ${field.name || "字段"}`;
+  const label = `${packet.name} / ${field.name || t('field')}`;
   const value = Number(field.value) || 0;
   const common = `<div class="metric-name">${escapeHtml(label)}</div>`;
   if (field.control === "switch") {
     const mode = field.switchMode || "toggle";
     if (mode === "momentary") {
-      return `${common}<button class="momentary-btn widget-switch" data-dashboard-send-momentary="${key}">点动开关</button>`;
+      return `${common}<button class="momentary-btn widget-switch" data-dashboard-send-momentary="${key}">${t('momentaryBtn')}</button>`;
     }
-    return `${common}<label class="switch widget-switch self-lock-switch"><input type="checkbox" ${value ? "checked" : ""} data-dashboard-send-switch="${key}"><span></span>自锁开关</label>`;
+    return `${common}<label class="switch widget-switch self-lock-switch"><input type="checkbox" ${value ? "checked" : ""} data-dashboard-send-switch="${key}"><span></span>${t('toggleSwitch')}</label>`;
   }
   if (field.control === "slider") {
     return `${common}<div class="dashboard-slider-row"><input class="widget-slider" type="range" min="${field.min ?? 0}" max="${field.max ?? 1000}" step="${sliderStep(field)}" value="${value}" data-dashboard-send-control="${key}"><input class="dashboard-number compact-number" type="number" min="${field.min ?? 0}" max="${field.max ?? 1000}" value="${value}" data-dashboard-send-control="${key}"></div>`;
@@ -944,7 +1083,7 @@ function createDashboardWidget(type, metric = null, idSeed = "", field = null) {
   return {
     id: `w_${idSeed || metric || Math.random().toString(16).slice(2)}`,
     type,
-    metric: metric || "未命名",
+    metric: metric || t('unnamed'),
     min: Number(field?.min) || 0,
     max: Number(field?.max) || guessGaugeMax(field, metric),
     skin: state.dashboardSkin || els.dashboardSkin?.value || "clean",
@@ -980,7 +1119,7 @@ function renderGaugeSvg(ratio, min, max) {
 }
 
 function renderDashboardWidget(widget, metric) {
-  const name = widget.metric || "未绑定";
+  const name = widget.metric || t('unbound');
   const value = metric.value;
   const numeric = Number(value);
   const min = Number.isFinite(Number(widget.min)) ? Number(widget.min) : 0;
@@ -997,7 +1136,7 @@ function renderDashboardWidget(widget, metric) {
     return `${common}<input class="widget-slider" type="range" min="0" max="5000" value="${Number.isFinite(numeric) ? numeric : 0}"><div class="metric-value">${escapeHtml(value)}</div>`;
   }
   if (widget.type === "switch") {
-    return `${common}<label class="switch widget-switch"><input type="checkbox" ${numeric > 0 ? "checked" : ""}><span></span>输出</label><div class="metric-value">${escapeHtml(value)}</div>`;
+    return `${common}<label class="switch widget-switch"><input type="checkbox" ${numeric > 0 ? "checked" : ""}><span></span>${t('output')}</label><div class="metric-value">${escapeHtml(value)}</div>`;
   }
   return `${common}<div class="metric-value">${escapeHtml(value)}</div>`;
 }
@@ -1098,7 +1237,7 @@ function drawCurve() {
   if (!allPoints.length) {
     drawCurveGrid(ctx, plot, plotW, plotH, [0, 1], [0, 1]);
     ctx.fillStyle = "#7d8994";
-    ctx.fillText("等待解析数据或勾选曲线通道...", plot.left + 8, plot.top + 22);
+    ctx.fillText(t('emptyCurve'), plot.left + 8, plot.top + 22);
     renderCurveLegend();
     renderCurveChannels();
     return;
@@ -1187,9 +1326,9 @@ function drawMeasureOverlay(ctx) {
     ctx.fillRect(x, y, 158, 58);
     ctx.strokeRect(x, y, 158, 58);
     ctx.fillStyle = "#6e4a00";
-    ctx.fillText(`周期 Δt: ${roundValue(dt)} s`, x + 8, y + 20);
-    ctx.fillText(`差值 ΔY: ${roundValue(dv)}`, x + 8, y + 38);
-    ctx.fillText(`峰峰值: ${roundValue(pp)}`, x + 8, y + 54);
+    ctx.fillText(`${t('measurePeriod')}${roundValue(dt)} s`, x + 8, y + 20);
+    ctx.fillText(`${t('measureDiff')}${roundValue(dv)}`, x + 8, y + 38);
+    ctx.fillText(`${t('measurePeak')}${roundValue(pp)}`, x + 8, y + 54);
   }
   ctx.restore();
 }
@@ -1290,7 +1429,7 @@ function renderCurveChannels() {
   if (!els.curveChannelList) return;
   const names = Object.keys(state.curveSeries);
   if (!names.length) {
-    els.curveChannelList.innerHTML = `<div class="curve-empty">暂无曲线通道</div>`;
+    els.curveChannelList.innerHTML = `<div class="curve-empty">${t('noCurveChannel')}</div>`;
     return;
   }
   els.curveChannelList.innerHTML = names
@@ -1397,9 +1536,9 @@ function renderPacketList() {
     item.innerHTML = `
       <input type="checkbox" ${packet.enabled ? "checked" : ""} data-packet-enabled="${idx}">
       <div class="packet-name" title="${escapeHtml(toHex(bytes))}">${escapeHtml(packet.name)}</div>
-      <button class="mini" data-edit-packet="${idx}">设置</button>
-      <button class="mini" data-send-packet="${idx}">发送</button>
-      <button class="mini danger" data-delete-packet="${idx}">删</button>`;
+      <button class="mini" data-edit-packet="${idx}">${t('edit')}</button>
+      <button class="mini" data-send-packet="${idx}">${t('send')}</button>
+      <button class="mini danger" data-delete-packet="${idx}">${t('del')}</button>`;
     item.addEventListener("click", (event) => {
       if (event.target.tagName === "BUTTON" || event.target.tagName === "INPUT") return;
       state.activePacket = idx;
@@ -1430,27 +1569,27 @@ function renderPacketFields() {
         ? `<input value="${escapeHtml(field.bytes || "")}" data-field-prop="${idx}:bytes">`
         : `<input type="number" value="${field.value ?? 0}" data-field-prop="${idx}:value">`;
       const controlSelect = numericField
-        ? `<select data-field-control="${idx}">${options(controlTypes, field.control || "none")}</select>`
+        ? `<select data-field-control="${idx}">${options(getControlTypeOptions(), field.control || "none")}</select>`
         : `<span class="field-static">-</span>`;
       if (numericField && ["slider", "number"].includes(field.control)) normalizeFieldControlLimits(field);
       const limitInputs = numericField && ["slider", "number"].includes(field.control)
         ? `<div class="field-control-limits">
-            <label>最小<input type="number"${limitInputAttrs(field)} value="${field.min ?? 0}" data-field-limit="${idx}:min"></label>
-            <label>最大<input type="number"${limitInputAttrs(field)} value="${field.max ?? Math.max(1000, Number(field.value) || 1000)}" data-field-limit="${idx}:max"></label>
+            <label>${t('min')}<input type="number"${limitInputAttrs(field)} value="${field.min ?? 0}" data-field-limit="${idx}:min"></label>
+            <label>${t('max')}<input type="number"${limitInputAttrs(field)} value="${field.max ?? Math.max(1000, Number(field.value) || 1000)}" data-field-limit="${idx}:max"></label>
           </div>`
         : `<span class="field-static">-</span>`;
       return `
         <div class="field-row">
-          <select data-field-prop="${idx}:type">${options(fieldTypes, field.type)}</select>
+          <select data-field-prop="${idx}:type">${options(getFieldTypeOptions(), field.type)}</select>
           <input value="${escapeHtml(field.name || "")}" data-field-prop="${idx}:name">
-          <select data-field-prop="${idx}:endian"><option value="little" ${field.endian !== "big" ? "selected" : ""}>小端</option><option value="big" ${field.endian === "big" ? "selected" : ""}>大端</option></select>
+          <select data-field-prop="${idx}:endian"><option value="little" ${field.endian !== "big" ? "selected" : ""}>${t('littleEndian')}</option><option value="big" ${field.endian === "big" ? "selected" : ""}>${t('bigEndian')}</option></select>
           ${valueInput}
           ${controlSelect}
           ${limitInputs}
           <div class="field-actions">
             <button class="mini" data-move-field-up="${idx}" ${idx === 0 ? "disabled" : ""}>↑</button>
             <button class="mini" data-move-field-down="${idx}" ${idx === packet.fields.length - 1 ? "disabled" : ""}>↓</button>
-            <button class="mini danger" data-delete-field="${idx}">删</button>
+            <button class="mini danger" data-delete-field="${idx}">${t('del')}</button>
           </div>
         </div>`;
     })
@@ -1459,7 +1598,7 @@ function renderPacketFields() {
   els.packetFields.innerHTML = `
     <div class="group-row">
       <input readonly data-packet-hex-preview value="${escapeHtml(toHex(bytes))}">
-      <button data-copy-packet>复制HEX</button>
+      <button data-copy-packet>${t('copyHex')}</button>
     </div>
     ${rows}
     ${renderGeneratedControls(packet)}
@@ -1473,7 +1612,7 @@ function renderGeneratedControls(packet) {
   if (!controls.length) return "";
   return `
     <div class="control-panel">
-      <strong>生成控件</strong>
+      <strong>${t('generatedControls')}</strong>
       ${controls
         .map(({ field, idx }) => renderPacketControl(field, idx, packet))
         .join("")}
@@ -1481,19 +1620,19 @@ function renderGeneratedControls(packet) {
 }
 
 function renderPacketControl(field, idx, packet) {
-  const name = escapeHtml(field.name || "控制");
+  const name = escapeHtml(field.name || t('control'));
   const value = Number(field.value) || 0;
   if (field.control === "switch") {
     const mode = field.switchMode || "toggle";
     const switchControl = mode === "momentary"
-      ? `<button class="momentary-btn" data-control-momentary="${idx}">点动</button>`
-      : `<label class="switch self-lock-switch"><input type="checkbox" ${value ? "checked" : ""} data-control-switch="${idx}"><span></span>自锁</label>`;
+      ? `<button class="momentary-btn" data-control-momentary="${idx}">${t('switchMomentary')}</button>`
+      : `<label class="switch self-lock-switch"><input type="checkbox" ${value ? "checked" : ""} data-control-switch="${idx}"><span></span>${t('switchToggle')}</label>`;
     return `
       <div class="control-row compact-control">
         <span>${name}</span>
         ${switchControl}
-        <select data-switch-mode="${idx}">${options(switchModes, mode)}</select>
-        <button class="mini" data-control-send="${idx}">${packet.trigger ? "触发" : "发送"}</button>
+        <select data-switch-mode="${idx}">${options(getSwitchModeOptions(), mode)}</select>
+        <button class="mini" data-control-send="${idx}">${packet.trigger ? t('trigger') : t('send')}</button>
       </div>`;
   }
   if (field.control === "number") {
@@ -1502,7 +1641,7 @@ function renderPacketControl(field, idx, packet) {
         <span>${name}</span>
         <input type="number" min="${field.min ?? ""}" max="${field.max ?? ""}" value="${value}" data-control-number="${idx}">
         <span></span>
-        <button class="mini" data-control-send="${idx}">${packet.trigger ? "触发" : "发送"}</button>
+        <button class="mini" data-control-send="${idx}">${packet.trigger ? t('trigger') : t('send')}</button>
       </div>`;
   }
   return `
@@ -1510,7 +1649,7 @@ function renderPacketControl(field, idx, packet) {
       <span>${name}</span>
       <input type="range" min="${field.min ?? 0}" max="${field.max ?? 1000}" step="${sliderStep(field)}" value="${value}" data-control-field="${idx}">
       <input type="number" min="${field.min ?? ""}" max="${field.max ?? ""}" value="${value}" data-control-number="${idx}">
-      <button class="mini" data-control-send="${idx}">${packet.trigger ? "触发" : "发送"}</button>
+      <button class="mini" data-control-send="${idx}">${packet.trigger ? t('trigger') : t('send')}</button>
     </div>`;
 }
 
@@ -1522,9 +1661,9 @@ function renderParserList() {
     item.innerHTML = `
       <input type="checkbox" ${parser.enabled ? "checked" : ""} data-parser-enabled="${idx}">
       <div class="packet-name">${escapeHtml(parser.name)} · ${frameLength(parser)} bytes</div>
-      <button class="mini" data-edit-parser="${idx}">设置</button>
-      <button class="mini" data-clone-parser="${idx}">复制</button>
-      <button class="mini danger" data-delete-parser="${idx}">删</button>`;
+      <button class="mini" data-edit-parser="${idx}">${t('edit')}</button>
+      <button class="mini" data-clone-parser="${idx}">${t('copy')}</button>
+      <button class="mini danger" data-delete-parser="${idx}">${t('del')}</button>`;
     item.addEventListener("click", (event) => {
       if (event.target.tagName === "BUTTON" || event.target.tagName === "INPUT") return;
       state.activeParser = idx;
@@ -1545,26 +1684,26 @@ function renderParserFields() {
       const valueInput = field.type === "const" || field.type === "tail"
         ? `<input value="${escapeHtml(field.bytes || "")}" data-parser-prop="${idx}:bytes">`
         : field.type === "checksum8"
-          ? `<input value="自动校验" disabled>`
+          ? `<input value="${t('autoChecksum')}" disabled>`
           : (!field.show && !field.curve && typeof field.value === "number")
             ? `<input type="number" value="${field.value}" data-parser-prop="${idx}:value">`
-            : `<input value="${escapeHtml(field.expr || "")}" placeholder="公式: x / 10" data-parser-prop="${idx}:expr">`;
+            : `<input value="${escapeHtml(field.expr || "")}" placeholder="${t('exprPlaceholder')}" data-parser-prop="${idx}:expr">`;
       const widgetSelect = field.show
-        ? `<select data-parser-widget="${idx}">${options(widgetTypes, field.widget || "metric")}</select>`
+        ? `<select data-parser-widget="${idx}">${options(getWidgetTypeOptions(), field.widget || "metric")}</select>`
         : `<span class="field-static">-</span>`;
       return `
         <div class="parser-row">
-          <select data-parser-prop="${idx}:type">${options(parserTypes, field.type)}</select>
+          <select data-parser-prop="${idx}:type">${options(getParserTypeOptions(), field.type)}</select>
           <input value="${escapeHtml(field.name || "")}" data-parser-prop="${idx}:name">
-          <select data-parser-prop="${idx}:endian"><option value="little" ${field.endian !== "big" ? "selected" : ""}>小端</option><option value="big" ${field.endian === "big" ? "selected" : ""}>大端</option></select>
+          <select data-parser-prop="${idx}:endian"><option value="little" ${field.endian !== "big" ? "selected" : ""}>${t('littleEndian')}</option><option value="big" ${field.endian === "big" ? "selected" : ""}>${t('bigEndian')}</option></select>
           ${valueInput}
-          <label class="check-inline"><input type="checkbox" ${field.show ? "checked" : ""} data-parser-check="${idx}:show">面板</label>
-          <label class="check-inline"><input type="checkbox" ${field.curve ? "checked" : ""} data-parser-check="${idx}:curve">曲线</label>
+          <label class="check-inline"><input type="checkbox" ${field.show ? "checked" : ""} data-parser-check="${idx}:show">${t('panel')}</label>
+          <label class="check-inline"><input type="checkbox" ${field.curve ? "checked" : ""} data-parser-check="${idx}:curve">${t('curve')}</label>
           ${widgetSelect}
           <div class="field-actions">
             <button class="mini" data-move-parser-field-up="${idx}" ${idx === 0 ? "disabled" : ""}>↑</button>
             <button class="mini" data-move-parser-field-down="${idx}" ${idx === parser.fields.length - 1 ? "disabled" : ""}>↓</button>
-            <button class="mini danger" data-delete-parser-field="${idx}">删</button>
+            <button class="mini danger" data-delete-parser-field="${idx}">${t('del')}</button>
           </div>
         </div>`;
     })
@@ -1581,7 +1720,7 @@ function options(list, selected) {
 function renderProfileSelect() {
   if (!els.profileSelect) return;
   els.profileSelect.innerHTML = state.profiles
-    .map((profile, idx) => `<option value="${idx}" ${idx === state.activeProfileIndex ? "selected" : ""}>${escapeHtml(profile.groupName || `协议组 ${idx + 1}`)}</option>`)
+    .map((profile, idx) => `<option value="${idx}" ${idx === state.activeProfileIndex ? "selected" : ""}>${escapeHtml(profile.groupName || t('groupFallback')(idx + 1))}</option>`)
     .join("");
 }
 
@@ -1598,7 +1737,7 @@ function activateProfile(index) {
 }
 
 function setProfileName(name) {
-  state.profile.groupName = name.trim() || "未命名协议组";
+  state.profile.groupName = name.trim() || t('unnamedGroup');
   state.profiles[state.activeProfileIndex] = state.profile;
   renderProfileSelect();
 }
@@ -1673,9 +1812,9 @@ function closeNameModal(value) {
 async function editPacketSettings(index) {
   const packet = state.profile.packets[index];
   if (!packet) return;
-  const name = await openNameModal("发送包设置", packet.name || "");
+  const name = await openNameModal(t('packetSettings'), packet.name || "");
   if (name == null) return;
-  packet.name = name.trim() || "未命名发送包";
+  packet.name = name.trim() || t('unnamedPacket');
   state.activePacket = index;
   renderAll();
 }
@@ -1683,15 +1822,15 @@ async function editPacketSettings(index) {
 async function editParserSettings(index) {
   const parser = state.profile.parsers[index];
   if (!parser) return;
-  const name = await openNameModal("解析规则设置", parser.name || "");
+  const name = await openNameModal(t('parserSettings'), parser.name || "");
   if (name == null) return;
-  parser.name = name.trim() || "未命名解析规则";
+  parser.name = name.trim() || t('unnamedParser');
   state.activeParser = index;
   renderAll();
 }
 
 function exportProfile() {
-  state.profile.groupName ||= "未命名";
+  state.profile.groupName ||= t('unnamedExport');
   const blob = new Blob([JSON.stringify(state.profile, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -1713,9 +1852,9 @@ function importProfile(file) {
       state.activeParser = 0;
       resetRuntimeData();
       renderAll();
-      addLog("parsed", `已导入协议组: ${state.profile.groupName}`, { css: "parsed" });
+      addLog("parsed", t('imported')(state.profile.groupName), { css: "parsed" });
     } catch (err) {
-      addLog("error", `导入失败: ${err.message}`, { css: "error" });
+      addLog("error", t("importFail")(err.message), { css: "error" });
     }
   };
   reader.readAsText(file, "utf-8");
@@ -1724,7 +1863,7 @@ function importProfile(file) {
 function normalizeProfile(data) {
   if (Array.isArray(data) && data[0]?.CycleSendList) return convertJcomProfile(data[0]);
   if (data?.packets && data?.parsers) return data;
-  throw new Error("不支持的配置格式");
+  throw new Error(t("unsupportedFormat"));
 }
 
 function convertJcomProfile(jcom) {
@@ -1765,7 +1904,7 @@ function convertJcomField(field) {
   const type = len === 1 ? "uint8" : len === 2 ? "uint16" : "uint32";
   return {
     type,
-    name: field.CreateControl?.Name || "数据",
+    name: field.CreateControl?.Name || t('defaultField'),
     value: bytesToNumber(bytes, field.IsBigEndian),
     endian: field.IsBigEndian ? "big" : "little",
     control: field.CreateControl?.Slider ? "slider" : "none",
@@ -1784,7 +1923,7 @@ function convertJcomParserField(field) {
   const dc = field.DataConvert || {};
   return {
     type,
-    name: dc.Name || "数据",
+    name: dc.Name || t('defaultField'),
     endian: field.IsBigEndian ? "big" : "little",
     show: field.PanelShow !== false,
     curve: Boolean(dc.ShowCurve),
@@ -1799,10 +1938,10 @@ function normalizeExpression(expr) {
 function openProtocolAnalysis() {
   state.protocolAnalysis = null;
   els.protocolAnalysisImport.disabled = true;
-  els.protocolAnalysisStatus.textContent = "等待粘贴协议代码";
+  els.protocolAnalysisStatus.textContent = t('waitPasteCode');
   els.protocolAnalysisStatus.className = "protocol-analysis-status";
   els.protocolAnalysisResult.innerHTML = "";
-  els.protocolAnalysisName.value = `AI解析协议 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
+  els.protocolAnalysisName.value = `${t('aiProtocol')} ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
   els.protocolAnalysisModal.classList.remove("hidden");
   els.protocolAnalysisSource.focus();
 }
@@ -1818,13 +1957,13 @@ function analyzeProtocolSource() {
     });
     state.protocolAnalysis = result;
     els.protocolAnalysisImport.disabled = false;
-    els.protocolAnalysisStatus.textContent = `解析完成 · 可信度 ${result.analysis.confidence}`;
+    els.protocolAnalysisStatus.textContent = t('parseDone')(result.analysis.confidence);
     els.protocolAnalysisStatus.className = "protocol-analysis-status success";
     renderProtocolAnalysisResult(result);
   } catch (error) {
     state.protocolAnalysis = null;
     els.protocolAnalysisImport.disabled = true;
-    els.protocolAnalysisStatus.textContent = `解析失败：${error.message}`;
+    els.protocolAnalysisStatus.textContent = t('parseFail')(error.message);
     els.protocolAnalysisStatus.className = "protocol-analysis-status error";
     els.protocolAnalysisResult.innerHTML = "";
   }
@@ -1833,30 +1972,30 @@ function analyzeProtocolSource() {
 function renderProtocolAnalysisResult(result) {
   const { profile, analysis } = result;
   const packetItems = profile.packets.map((packet) => `
-    <li><strong>${escapeHtml(packet.name)}</strong><span>${packet.fields.length} 个字段</span></li>`).join("");
+    <li><strong>${escapeHtml(packet.name)}</strong><span>${t('fieldsCount')(packet.fields.length)}</span></li>`).join("");
   const parserItems = profile.parsers.map((parser) => `
-    <li><strong>${escapeHtml(parser.name)}</strong><span>${parser.fields.length} 个字段</span></li>`).join("");
+    <li><strong>${escapeHtml(parser.name)}</strong><span>${t('fieldsCount')(parser.fields.length)}</span></li>`).join("");
   const findings = analysis.findings.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const notes = analysis.notes.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   els.protocolAnalysisResult.innerHTML = `
     <div class="protocol-analysis-summary">
-      <span>来源：${escapeHtml(analysis.sourceType)}</span>
-      <span>发送包：${profile.packets.length}</span>
-      <span>接收规则：${profile.parsers.length}</span>
+      <span>${t('sourceLabel')(escapeHtml(analysis.sourceType))}</span>
+      <span>${t('packetLabel')(profile.packets.length)}</span>
+      <span>${t('parserLabel')(profile.parsers.length)}</span>
     </div>
-    <section><h3>解析分析</h3><ul>${findings}</ul></section>
+    <section><h3>${t('analysisTitle')}</h3><ul>${findings}</ul></section>
     <div class="protocol-preview-grid">
-      <section><h3>发送组包</h3><ul class="protocol-preview-list">${packetItems || "<li>未识别到发送包</li>"}</ul></section>
-      <section><h3>接收解析</h3><ul class="protocol-preview-list">${parserItems || "<li>未识别到接收规则</li>"}</ul></section>
+      <section><h3>${t('sendGroupTitle')}</h3><ul class="protocol-preview-list">${packetItems || `<li>${t('noSendFound')}</li>`}</ul></section>
+      <section><h3>${t('recvGroupTitle')}</h3><ul class="protocol-preview-list">${parserItems || `<li>${t('noRecvFound')}</li>`}</ul></section>
     </div>
-    <section class="protocol-analysis-notes"><h3>导入提示</h3><ul>${notes}</ul></section>`;
+    <section class="protocol-analysis-notes"><h3>${t('importTips')}</h3><ul>${notes}</ul></section>`;
 }
 
 function importAnalyzedProtocol() {
   if (!state.protocolAnalysis?.profile) return;
   stopAllPacketCycles();
   const profile = structuredClone(state.protocolAnalysis.profile);
-  profile.groupName = els.protocolAnalysisName.value.trim() || profile.groupName || "AI解析协议";
+  profile.groupName = els.protocolAnalysisName.value.trim() || profile.groupName || t('aiProtocol');
   profile.protocolMode ||= "custom";
   profile.packets ||= [];
   profile.parsers ||= [];
@@ -1868,7 +2007,7 @@ function importAnalyzedProtocol() {
   resetRuntimeData();
   renderAll();
   closeProtocolAnalysis();
-  addLog("parsed", `协议解析已导入: ${profile.groupName}`, { css: "parsed" });
+  addLog("parsed", t('aiImported')(profile.groupName), { css: "parsed" });
 }
 
 function bytesToNumber(bytes, bigEndian) {
@@ -1902,149 +2041,142 @@ function toggleDemo() {
   if (state.demoTimer) {
     clearInterval(state.demoTimer);
     state.demoTimer = null;
-    els.demoBtn.textContent = "模拟数据";
+    els.demoBtn.textContent = t("demo");
     return;
   }
   state.demoTimer = setInterval(demoTick, 120);
-  els.demoBtn.textContent = "停止模拟";
+  els.demoBtn.textContent = t("demoStop");
 }
 
-const helpText = {
-  zh: {
-    title: "中文帮助",
-    lines: [
-      "USB串口用于普通 COM 口设备；蓝牙串口用于 BLE UART 透传；网络串口用于 TCP Client。",
-      "组包发送中，字段可设置为滑条、开关或数值框控件，控件改变会同步字段值和 HEX 预览。",
-      "接收解析中，勾选“面板”的字段会自动出现在数据面板；勾选“曲线”的字段会进入实时曲线。",
-      "曲线支持 Ctrl+滚轮缩放时间轴，Shift+滚轮缩放数值轴，右键框选放大，右键单击复位。"
-    ],
-  },
-  en: {
-    title: "Help",
-    lines: [
-      "USB Serial is for COM devices; Bluetooth Serial is for BLE UART; Network Serial is a TCP client.",
-      "Packet fields can generate sliders, switches, or numeric controls. Control changes update field values and HEX preview.",
-      "Fields checked for Panel appear in the dashboard. Fields checked for Curve are plotted in the realtime chart.",
-      "Use Ctrl+wheel to zoom the time axis, Shift+wheel to zoom the value axis, right-drag to zoom a region, and right-click to reset."
-    ],
-  },
-  ja: {
-    title: "ヘルプ",
-    lines: [
-      "USBシリアルはCOMデバイス用、BluetoothシリアルはBLE UART用、ネットワークシリアルはTCPクライアント用です。",
-      "送信フィールドはスライダー、スイッチ、数値入力にできます。操作するとフィールド値とHEXプレビューが更新されます。",
-      "受信解析で「面板」を有効にしたフィールドはデータパネルに表示され、「曲线」を有効にしたフィールドはリアルタイム波形に表示されます。",
-      "Ctrl+ホイールで時間軸、Shift+ホイールで値軸を拡大縮小できます。右ドラッグで範囲拡大、右クリックでリセットします。"
-    ],
-  },
-  ko: {
-    title: "도움말",
-    lines: [
-      "USB 시리얼은 COM 장치용, 블루투스 시리얼은 BLE UART용, 네트워크 시리얼은 TCP 클라이언트용입니다.",
-      "송신 필드는 슬라이더, 스위치, 숫자 입력 컨트롤로 만들 수 있으며 값 변경 시 필드와 HEX 미리보기가 함께 갱신됩니다.",
-      "수신解析에서 패널 표시를 선택한 필드는 데이터 패널에 표시되고, 곡선을 선택한 필드는 실시간 파형에 표시됩니다.",
-      "Ctrl+휠은 시간축 확대/축소, Shift+휠은 값축 확대/축소입니다. 우클릭 드래그는 영역 확대, 우클릭은 초기화입니다."
-    ],
-  },
-};
 
 function renderHelp() {
-  const lang = els.helpLanguage?.value || "zh";
-  const content = helpText[lang] || helpText.zh;
-  const about = lang === "en"
-    ? { title: "Software Information", author: "Author", company: "Company", website: "Website" }
-    : { title: "软件信息", author: "作者", company: "公司", website: "公司网址" };
+  const lang = els.helpLanguage?.value || state.language || "zh";
+  const tl = (key) => tLang(lang, key);
   els.helpContent.innerHTML = `
-    <h3>${escapeHtml(content.title)}</h3>
-    ${content.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+    <h3>${escapeHtml(tl('helpTitle'))}</h3>
+    ${tl('helpLines').map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
     <section class="help-about">
-      <strong>${about.title}</strong>
-      <div><span>${about.author}</span><b>L.S</b></div>
-      <div><span>${about.company}</span><b>峰岹科技(青岛)有限公司</b></div>
-      <div><span>${about.website}</span><a href="https://www.fortiortech.com/" target="_blank" rel="noreferrer">www.fortiortech.com</a></div>
+      <strong>${tl('aboutTitle')}</strong>
+      <div><span>${tl('aboutAuthor')}</span><b>L.S</b></div>
+      <div><span>${tl('aboutCompany')}</span><b>峰岹科技(青岛)有限公司</b></div>
+      <div><span>${tl('aboutWebsite')}</span><a href="https://www.fortiortech.com/" target="_blank" rel="noreferrer">www.fortiortech.com</a></div>
     </section>`;
 }
 
-const toolText = {
-  zh: {
-    buttons: {
-      "#connectBtn": "打开", "#demoBtn": "模拟数据", "#clearLogBtn": "清空", "#saveLogBtn": "保存数据",
-      "#pauseReceive": "暂停",
-      "#importBtn": "导入", "#exportBtn": "导出", "#renameProfileBtn": "重命名", "#newProfileBtn": "新建",
-      "#addPacketBtn": "添加包", "#addFieldBtn": "加字段", "#addParserBtn": "添加规则", "#addParserFieldBtn": "加字段",
-      "#pauseCurveBtn": "暂停曲线", "#clearCurveBtn": "清空曲线", "#measureCurveBtn": "测量", "#expandCurveBtn": "放大",
-      "#sendRawBtn": "发送", "#clearSendBtn": "清空", "#terminalSendBtn": "发送", "#terminalClearBtn": "清空",
-    },
-    tabs: ["数据面板", "实时曲线", "组包发送", "接收解析"],
-    labels: { link: "链路", port: "串口", baud: "波特率", toolLanguage: "工具语言", timeFormat: "时间戳格式", maxLog: "最大日志行数", maxCurve: "曲线缓存点数", encoding: "默认接收编码" },
-    panels: ["接收区", "协议组", "发送区"],
-    checks: { hexView: "HEX显示", autoScroll: "自动滚动", pauseReceive: "暂停", sendHex: "HEX发送", cycleSend: "周期发送", appendNewline: "回车发送", logCsv: "CSV缓存" },
-    settingsTitle: "工具设置",
-  },
-  en: {
-    buttons: {
-      "#connectBtn": "Open", "#demoBtn": "Demo Data", "#clearLogBtn": "Clear", "#saveLogBtn": "Save Data",
-      "#pauseReceive": "Pause",
-      "#importBtn": "Import", "#exportBtn": "Export", "#renameProfileBtn": "Rename", "#newProfileBtn": "New",
-      "#addPacketBtn": "Add Packet", "#addFieldBtn": "Add Field", "#addParserBtn": "Add Rule", "#addParserFieldBtn": "Add Field",
-      "#pauseCurveBtn": "Pause Curve", "#clearCurveBtn": "Clear Curve", "#measureCurveBtn": "Measure", "#expandCurveBtn": "Expand",
-      "#sendRawBtn": "Send", "#clearSendBtn": "Clear", "#terminalSendBtn": "Send", "#terminalClearBtn": "Clear",
-    },
-    tabs: ["Dashboard", "Realtime Curve", "Packet Send", "Receive Parser"],
-    labels: { link: "Link", port: "Port", baud: "Baud Rate", toolLanguage: "Tool Language", timeFormat: "Timestamp Format", maxLog: "Maximum Log Lines", maxCurve: "Curve Buffer Points", encoding: "Default Receive Encoding" },
-    panels: ["Receive", "Protocol Group", "Send"],
-    checks: { hexView: "HEX View", autoScroll: "Auto Scroll", pauseReceive: "Pause", sendHex: "HEX Send", cycleSend: "Cycle Send", appendNewline: "Append CR", logCsv: "CSV Buffer" },
-    settingsTitle: "Tool Settings",
-  },
-};
-
-function setLabelText(element, text) {
-  if (!element) return;
-  const node = [...element.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && child.textContent.trim());
-  if (node) node.textContent = `${text} `;
-}
 
 function applyToolLanguage(language, notifyMain = true) {
-  const lang = language === "en" ? "en" : "zh";
-  const text = toolText[lang];
+  const lang = ["en", "ja", "ko"].includes(language) ? language : "zh";
   state.language = lang;
   localStorage.setItem("ftToolLanguage", lang);
-  document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+  const htmlLangMap = { en: "en", ja: "ja", ko: "ko" };
+  document.documentElement.lang = htmlLangMap[lang] || "zh-CN";
   if (els.toolLanguage) els.toolLanguage.value = lang;
-  Object.entries(text.buttons).forEach(([selector, value]) => {
-    const button = document.querySelector(selector);
-    if (button && !button.classList.contains("active")) button.textContent = value;
-  });
-  updatePauseReceiveButton();
-  document.querySelectorAll(".small-tab").forEach((button, index) => {
-    if (text.tabs[index]) button.textContent = text.tabs[index];
-  });
-  setLabelText(els.linkType?.closest("label"), text.labels.link);
-  setLabelText(els.portSelect?.closest("label"), text.labels.port);
-  setLabelText(els.baudRate?.closest("label"), text.labels.baud);
-  setLabelText(els.toolLanguage?.closest("label"), text.labels.toolLanguage);
-  setLabelText(els.timeFormat?.closest("label"), text.labels.timeFormat);
-  setLabelText(els.maxLogLines?.closest("label"), text.labels.maxLog);
-  setLabelText(els.maxCurvePoints?.closest("label"), text.labels.maxCurve);
-  setLabelText($("#textEncoding")?.closest("label"), text.labels.encoding);
-  [".receive-panel .panel-title", ".side-panel .panel-title", ".send-panel .panel-title"].forEach((selector, index) => {
-    const title = document.querySelector(selector);
-    if (title) title.textContent = text.panels[index];
-  });
-  Object.entries(text.checks).forEach(([id, value]) => setLabelText(document.getElementById(id)?.closest("label"), value));
-  const linkOptions = lang === "en" ? ["USB Serial", "Bluetooth Serial", "Network Serial"] : ["USB串口", "蓝牙串口", "网络串口"];
-  [...els.linkType.options].forEach((option, index) => { if (linkOptions[index]) option.textContent = linkOptions[index]; });
-  if (els.profileMode) {
-    els.profileMode.options[0].textContent = lang === "en" ? "Custom Protocol" : "自定义协议";
-    els.profileMode.options[1].textContent = lang === "en" ? "Fixed Protocol" : "固定协议";
-  }
-  const settingsTitle = document.querySelector(".settings-panel h2");
-  if (settingsTitle) settingsTitle.textContent = text.settingsTitle;
+  updateStaticText();
+  renderAll();
   if (els.helpLanguage) {
     els.helpLanguage.value = lang;
     renderHelp();
   }
   if (notifyMain) window.ftApp?.setLanguage(lang);
+}
+
+/** 更新所有静态 UI 元素的文字 */
+function updateStaticText() {
+  // 按钮
+  const btnMap = {
+    connectBtn: state.connected ? "close" : "open",
+    demoBtn: state.demoTimer ? "demoStop" : "demo",
+    clearLogBtn: "clear", saveLogBtn: "save",
+    pauseReceive: state.receivePaused ? "resume" : "pause",
+    importBtn: "import", exportBtn: "export",
+    renameProfileBtn: "rename", newProfileBtn: "new",
+    addPacketBtn: "addPacket", addFieldBtn: "addField",
+    addParserBtn: "addRule", addParserFieldBtn: "addField",
+    pauseCurveBtn: state.curvePaused ? "resumeCurve" : "pauseCurve",
+    clearCurveBtn: "clearCurve",
+    measureCurveBtn: state.measuring ? "measureExit" : "measure",
+    expandCurveBtn: state.curveExpanded ? "restore" : "expand",
+    sendRawBtn: "send", clearSendBtn: "clear",
+    terminalSendBtn: "send", terminalClearBtn: "clear",
+  };
+  for (const [id, key] of Object.entries(btnMap)) {
+    const el = document.getElementById(id);
+    if (el && !el.classList.contains("active")) el.textContent = t(key);
+  }
+
+  // 标签页
+  const tabKeys = ["tabData", "tabCurve", "tabSend", "tabRecv"];
+  document.querySelectorAll(".small-tab").forEach((btn, i) => {
+    if (tabKeys[i]) btn.textContent = t(tabKeys[i]);
+  });
+
+  // 面板标题
+  const panelSelectors = [".receive-panel .panel-title", ".side-panel .panel-title", ".send-panel .panel-title"];
+  const panelKeys = ["panelRecv", "panelGroup", "panelSend"];
+  panelSelectors.forEach((sel, i) => {
+    const el = document.querySelector(sel);
+    if (el) el.textContent = t(panelKeys[i]);
+  });
+
+  // 复选框标签
+  const checkMap = {
+    hexView: "checkHex", autoScroll: "checkAutoScroll", pauseReceive: "checkPause",
+    sendHex: "checkHexSend", cycleSend: "checkCycle", appendNewline: "checkCR", logCsv: "checkCsv",
+  };
+  for (const [id, key] of Object.entries(checkMap)) {
+    const el = document.getElementById(id);
+    if (el?.closest("label")) {
+      const node = [...el.closest("label").childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+      if (node) node.textContent = `${t(key)} `;
+    }
+  }
+
+  // 设置标签
+  const labelMap = {
+    linkType: "labelLink", portSelect: "labelPort", baudRate: "labelBaud",
+    toolLanguage: "labelLang", timeFormat: "labelTime", maxLogLines: "labelMaxLog",
+    maxCurvePoints: "labelMaxCurve",
+  };
+  for (const [id, key] of Object.entries(labelMap)) {
+    const el = document.getElementById(id);
+    if (el?.closest("label")) {
+      const node = [...el.closest("label").childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+      if (node) node.textContent = `${t(key)} `;
+    }
+  }
+
+  // 链路下拉框
+  const linkKeys = ["linkUsb", "linkBle", "linkTcp"];
+  if (els.linkType) {
+    [...els.linkType.options].forEach((opt, i) => {
+      if (linkKeys[i]) opt.textContent = t(linkKeys[i]);
+    });
+  }
+
+  // 协议模式下拉框
+  if (els.profileMode) {
+    els.profileMode.options[0].textContent = t("protoCustom");
+    els.profileMode.options[1].textContent = t("protoFixed");
+  }
+
+  // 设置面板标题
+  const settingsTitle = document.querySelector(".settings-panel h2");
+  if (settingsTitle) settingsTitle.textContent = t("settingsTitle");
+
+  // 状态栏
+  if (!state.connected) {
+    els.statusText.textContent = t("disconnected");
+    els.connectBtn.textContent = t("open");
+  }
+
+  // 浏览器支持文字
+  if (window.ftUsbSerial) {
+    els.browserSupport.textContent = t("nativeUsbOk");
+  } else if (!("serial" in navigator)) {
+    els.browserSupport.textContent = window.ftTcpSerial ? t("tcpOk") : t("browserSerialNo");
+  } else {
+    els.browserSupport.textContent = t("browserSerialOk");
+  }
 }
 
 function updateSettingsFromStorage() {
@@ -2065,7 +2197,7 @@ function saveUpdateSettings() {
   localStorage.setItem("ftUpdateMirrorUrl", mirrorUrl);
   localStorage.setItem("ftAutoCheckUpdates", String(autoCheck));
   window.ftApp?.configureUpdates({ repository, mirrorUrl, autoCheck });
-  if (els.updateStatus) els.updateStatus.textContent = mirrorUrl ? "更新服务器设置已保存" : (repository ? "GitHub 更新设置已保存" : "请填写更新服务器或 GitHub 仓库地址");
+  if (els.updateStatus) els.updateStatus.textContent = mirrorUrl ? t('updateSaved') : (repository ? t('githubSaved') : t('fillUpdateUrl'));
 }
 
 function setAppMode(mode) {
@@ -2113,17 +2245,8 @@ function setWorkspaceView(view, notifyMain = true) {
   setTimeout(drawCurve, 60);
 }
 
-window.ftApp?.onMode((mode) => setAppMode(mode));
-window.ftApp?.onWorkspaceView((view) => setWorkspaceView(view, false));
-window.ftApp?.onSettings(() => els.toolSettingsModal?.classList.remove("hidden"));
-window.ftApp?.onHelp(() => {
-  renderHelp();
-  els.helpModal?.classList.remove("hidden");
-});
-window.ftApp?.onProtocolAnalysis(openProtocolAnalysis);
-window.ftApp?.onLanguage((language) => applyToolLanguage(language, false));
 window.ftApp?.onUpdateStatus((status) => {
-  if (els.updateStatus) els.updateStatus.textContent = status?.message || "更新状态未知";
+  if (els.updateStatus) els.updateStatus.textContent = status?.message || t('updateUnknown');
   renderUpdateProgress(status);
 });
 
@@ -2141,34 +2264,36 @@ function setUpdateProgress(element, label, value) {
 }
 
 function renderUpdateProgress(status = {}) {
-  const activeStates = ["available", "downloading", "verifying", "ready", "installing", "error"];
-  if (activeStates.includes(status.state)) els.updateProgressModal?.classList.remove("hidden");
+  // 所有非空状态都显示弹窗，让用户看到反馈
+  if (status.state) els.updateProgressModal?.classList.remove("hidden");
+  // "current" 状态 2 秒后自动关闭
+  if (status.state === "current") setTimeout(() => els.updateProgressModal?.classList.add("hidden"), 2000);
   els.updateProgressModal?.classList.toggle("update-available-mode", status.state === "available");
   els.updateAvailableInfo?.classList.toggle("hidden", status.state !== "available");
   if (status.state === "available") {
-    if (els.updateAvailableTitle) els.updateAvailableTitle.textContent = `发现新版本 ${status.latest || ""}`;
-    if (els.updateVersionDetail) els.updateVersionDetail.textContent = `当前版本 ${status.current || "-"} · 更新包 ${formatUpdateBytes(status.size)}`;
-    if (els.updateReleaseNotes) els.updateReleaseNotes.textContent = status.notes || "暂无更新说明";
+    if (els.updateAvailableTitle) els.updateAvailableTitle.textContent = t('newVersion')(status.latest || "");
+    if (els.updateVersionDetail) els.updateVersionDetail.textContent = `${t('currentVersion')(status.current || "-")} · ${t('updatePkg')} ${formatUpdateBytes(status.size)}`;
+    if (els.updateReleaseNotes) els.updateReleaseNotes.textContent = status.notes || t('noReleaseNotes');
   }
   setUpdateProgress(els.updateDownloadProgress, els.updateDownloadPercent, status.progress);
   setUpdateProgress(els.updateInstallProgress, els.updateInstallPercent, status.updateProgress);
-  if (els.updateProgressStatus) els.updateProgressStatus.textContent = status.message || "正在准备更新";
+  if (els.updateProgressStatus) els.updateProgressStatus.textContent = status.message || t('preparingUpdate');
   if (els.updateDownloadDetail && status.state === "downloading") {
     const size = status.total ? `${formatUpdateBytes(status.received)} / ${formatUpdateBytes(status.total)}` : formatUpdateBytes(status.received);
     els.updateDownloadDetail.textContent = `${size} · ${formatUpdateBytes(status.speed)}/s`;
   }
   if (els.updateDownloadDetail && ["verifying", "ready", "installing"].includes(status.state)) {
-    els.updateDownloadDetail.textContent = "下载完成";
+    els.updateDownloadDetail.textContent = t('downloadDone');
   }
   if (els.updateInstallDetail) {
-    if (status.state === "verifying") els.updateInstallDetail.textContent = `正在校验 ${formatUpdateBytes(status.checked)} / ${formatUpdateBytes(status.total)}`;
-    if (status.state === "ready") els.updateInstallDetail.textContent = "校验完成，更新文件已准备好";
-    if (status.state === "installing") els.updateInstallDetail.textContent = "正在启动新版本";
-    if (status.state === "error") els.updateInstallDetail.textContent = status.message || "更新失败";
+    if (status.state === "verifying") els.updateInstallDetail.textContent = t('verifying')(formatUpdateBytes(status.checked), formatUpdateBytes(status.total));
+    if (status.state === "ready") els.updateInstallDetail.textContent = t('verifyDone');
+    if (status.state === "installing") els.updateInstallDetail.textContent = t('launchingNew');
+    if (status.state === "error") els.updateInstallDetail.textContent = status.message || t('updateFailed');
   }
   if (els.updateActionBtn) {
     els.updateActionBtn.disabled = !["available", "ready"].includes(status.state);
-    els.updateActionBtn.textContent = status.state === "ready" ? "立即更新" : "下载更新";
+    els.updateActionBtn.textContent = status.state === "ready" ? t('updateNow') : t('downloadUpdate');
     els.updateActionBtn.dataset.action = status.state === "ready" ? "install" : "download";
   }
 }
@@ -2219,7 +2344,9 @@ document.addEventListener("click", async (event) => {
   if (target.id === "protocolAnalysisImport") importAnalyzedProtocol();
   if (target.id === "checkUpdatesBtn") {
     saveUpdateSettings();
-    window.ftApp?.checkUpdates();
+    window.ftApp?.checkUpdates().catch(err => {
+      renderUpdateProgress({ state: "error", message: err.message || String(err) });
+    });
   }
   if (target.dataset.packetCycleSend !== undefined) {
     const packetIndex = Number(target.dataset.packetCycleSend);
@@ -2228,7 +2355,7 @@ document.addEventListener("click", async (event) => {
   }
   if (target.id === "pauseCurveBtn") {
     state.curvePaused = !state.curvePaused;
-    els.pauseCurveBtn.textContent = state.curvePaused ? "继续曲线" : "暂停曲线";
+    els.pauseCurveBtn.textContent = state.curvePaused ? t('resumeCurve') : t('pauseCurve');
   }
   if (target.id === "clearCurveBtn") {
     state.curveSeries = {};
@@ -2239,19 +2366,19 @@ document.addEventListener("click", async (event) => {
     state.measuring = !state.measuring;
     state.measurePoints = [];
     target.classList.toggle("active", state.measuring);
-    target.textContent = state.measuring ? "退出测量" : "测量";
+    target.textContent = state.measuring ? t('measureExit') : t('measure');
     drawCurve();
   }
   if (target.id === "expandCurveBtn") {
     state.curveExpanded = !state.curveExpanded;
     $("#curveEditor")?.classList.toggle("curve-expanded", state.curveExpanded);
-    els.expandCurveBtn.textContent = state.curveExpanded ? "恢复" : "放大";
+    els.expandCurveBtn.textContent = state.curveExpanded ? t('restore') : t('expand');
     setTimeout(drawCurve, 60);
   }
   if (target.id === "importBtn") els.importFile.click();
   if (target.id === "exportBtn") exportProfile();
   if (target.id === "renameProfileBtn") {
-    openNameModal("协议组重命名", state.profile.groupName || "").then((name) => {
+    openNameModal(t('profileRename'), state.profile.groupName || "").then((name) => {
       if (name == null) return;
       setProfileName(name);
       renderAll();
@@ -2260,7 +2387,7 @@ document.addEventListener("click", async (event) => {
   if (target.id === "newProfileBtn") {
     stopAllPacketCycles();
     const profile = createDefaultProfile();
-    profile.groupName = `新协议组 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
+    profile.groupName = `${t('newGroupName')} ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
     state.profiles.push(profile);
     state.activeProfileIndex = state.profiles.length - 1;
     state.profile = profile;
@@ -2275,7 +2402,7 @@ document.addEventListener("click", async (event) => {
     renderAll();
   }
   if (target.id === "addFieldBtn") {
-    state.profile.packets[state.activePacket]?.fields.push({ type: "uint8", name: "数据", value: 0, endian: "little", control: "none" });
+    state.profile.packets[state.activePacket]?.fields.push({ type: "uint8", name: t('defaultField'), value: 0, endian: "little", control: "none" });
     renderAll();
   }
   if (target.id === "addParserBtn") {
@@ -2284,7 +2411,7 @@ document.addEventListener("click", async (event) => {
     renderAll();
   }
   if (target.id === "addParserFieldBtn") {
-    state.profile.parsers[state.activeParser]?.fields.push({ type: "uint16", name: "数据", endian: "big", show: true, curve: false, widget: "metric", expr: "x" });
+    state.profile.parsers[state.activeParser]?.fields.push({ type: "uint16", name: t('defaultField'), endian: "big", show: true, curve: false, widget: "metric", expr: "x" });
     renderAll();
   }
   if (target.dataset.sendPacket !== undefined) sendBytes(buildPacket(state.profile.packets[Number(target.dataset.sendPacket)]), state.profile.packets[Number(target.dataset.sendPacket)].name);
@@ -2326,12 +2453,12 @@ document.addEventListener("click", async (event) => {
     renderAll();
   }
   if (target.dataset.addField !== undefined) {
-    state.profile.packets[state.activePacket].fields.push({ type: "uint8", name: "数据", value: 0, endian: "little", control: "none" });
+    state.profile.packets[state.activePacket].fields.push({ type: "uint8", name: t('defaultField'), value: 0, endian: "little", control: "none" });
     renderAll();
   }
   if (target.dataset.copyPacket !== undefined) navigator.clipboard?.writeText(toHex(buildPacket(state.profile.packets[state.activePacket])));
   if (target.dataset.addParserField !== undefined) {
-    state.profile.parsers[state.activeParser].fields.push({ type: "uint16", name: "数据", endian: "big", show: true, curve: false, widget: "metric", expr: "x" });
+    state.profile.parsers[state.activeParser].fields.push({ type: "uint16", name: t('defaultField'), endian: "big", show: true, curve: false, widget: "metric", expr: "x" });
     renderAll();
   }
   if (target.dataset.moveParserFieldUp !== undefined) {
@@ -2666,7 +2793,7 @@ els.curveCanvas.addEventListener("mousedown", (event) => {
   if (state.measuring && event.button === 2) {
     state.measuring = false;
     state.measurePoints = [];
-    els.measureCurveBtn.textContent = "测量";
+    els.measureCurveBtn.textContent = t('measure');
     els.measureCurveBtn.classList.remove("active");
     drawCurve();
     return;
@@ -2761,11 +2888,11 @@ function saveText(name, text) {
 }
 
 if (window.ftUsbSerial) {
-  els.browserSupport.textContent = "原生USB串口可用";
+  els.browserSupport.textContent = t("nativeUsbOk");
 } else if (!("serial" in navigator)) {
-  els.browserSupport.textContent = window.ftTcpSerial ? "网络串口可用" : "浏览器串口不可用";
+  els.browserSupport.textContent = window.ftTcpSerial ? t("tcpOk") : t("browserSerialNo");
 } else {
-  els.browserSupport.textContent = "浏览器串口可用";
+  els.browserSupport.textContent = t("browserSerialOk");
 }
 
 initTransports();

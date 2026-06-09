@@ -1,0 +1,17 @@
+{
+  "name": "ft-update-server",
+  "version": "1.2.5",
+  "description": "FTSerialTool Update Server",
+  "main": "launcher.js",
+  "bin": "launcher.js",
+  "pkg": {
+    "assets": [],
+    "targets": [
+      "node20-win-x64"
+    ],
+    "outputPath": "../dist-server"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  }
+}

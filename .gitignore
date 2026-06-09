@@ -1,4 +1,13 @@
 node_modules/
 dist/
+dist-server/
+src-tauri/target/
+src-tauri/icons/
 npm-debug.log*
 *.zip
+*.exe
+update-server-config.json
+cache/
+server/cache/
+update-debug.log
+server.log

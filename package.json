@@ -1,28 +1,22 @@
 {
   "name": "ftserialtool",
-  "version": "1.2.5",
+  "version": "1.2.12",
   "description": "FT serial protocol workbench",
   "repository": "https://github.com/1052970753-hue/FTSerialTool",
-  "main": "src/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "check": "node --check src/app.js && node --check src/protocol-parser.js && node --check src/main.js && node --check src/preload.js && node --check scripts/update-server-core.js && node --check scripts/update-server.js && node --check update-server-app/main.js && node --check update-server-app/preload.js && node --check update-server-app/app.js",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "node --check src/app.js && node --check src/protocol-parser.js",
     "test": "node ./scripts/test-protocol-parser.js",
-    "clean": "powershell -ExecutionPolicy Bypass -File ./scripts/clean.ps1",
-    "compact:win": "powershell -ExecutionPolicy Bypass -File ./scripts/compact-win.ps1",
-    "pack:win": "powershell -ExecutionPolicy Bypass -File ./scripts/package-win.ps1",
-    "pack:portable": "powershell -ExecutionPolicy Bypass -File ./scripts/package-portable-win.ps1",
-    "pack:update-server": "powershell -ExecutionPolicy Bypass -File ./scripts/package-update-server-win.ps1",
-    "start:update-server": "electron ./update-server-app/main.js",
-    "serve:updates": "node ./scripts/update-server.js",
-    "publish:github": "powershell -ExecutionPolicy Bypass -File ./scripts/publish-github.ps1",
-    "release:github": "powershell -ExecutionPolicy Bypass -File ./scripts/publish-github.ps1 -Release"
+    "serve:updates": "node ./scripts/update-server.js"
   },
   "devDependencies": {
-    "electron": "^31.7.7"
+    "@tauri-apps/cli": "^2"
   },
   "dependencies": {
-    "serialport": "^13.0.0"
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-shell": "^2"
   }
 }
