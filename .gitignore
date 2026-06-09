@@ -11,3 +11,5 @@ cache/
 server/cache/
 update-debug.log
 server.log
+server/update-server.log
+*.log
