@@ -1,6 +1,6 @@
 {
   "productName": "FTSerialTool",
-  "version": "1.2.12",
+  "version": "1.2.13",
   "identifier": "com.fortiortech.ftserialtool",
   "build": {
     "frontendDist": "../src",
