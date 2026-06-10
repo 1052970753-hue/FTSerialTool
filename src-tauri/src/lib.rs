@@ -36,6 +36,7 @@ pub fn run() {
             updater::save_update_file,
             updater::open_downloads_folder,
             updater::install_update,
+            updater::apply_update,
             app_get_version,
             app_set_language,
         ])

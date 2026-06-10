@@ -125,7 +125,7 @@ window._ftDownloadUpdate = async function () {
       progress: 1,
       target: savedPath,
     });
-    _pendingAsset = null;
+    _pendingAsset.savedPath = savedPath;
   } catch (e) {
     renderUpdateProgress({ state: "error", message: "下载失败: " + e.message });
   }
@@ -2335,7 +2335,9 @@ document.addEventListener("click", async (event) => {
   if (target.id === "updateActionBtn") {
     target.disabled = true;
     const action = target.dataset.action;
-    const task = action === "install" ? window.ftApp?.installUpdate() : window.ftApp?.downloadUpdate();
+    const task = action === "install"
+      ? (_pendingAsset?.savedPath ? window.ftApp?.applyUpdate(_pendingAsset.savedPath) : window.ftApp?.installUpdate())
+      : window.ftApp?.downloadUpdate();
     task?.catch((error) => renderUpdateProgress({ state: "error", message: error.message }));
   }
   if (target.id === "helpClose" || target.id === "helpModal") els.helpModal?.classList.add("hidden");

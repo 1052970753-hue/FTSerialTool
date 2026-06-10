@@ -25,6 +25,7 @@ anyhow = "1"
 regex = "1"
 urlencoding = "2"
 opener = "0.7"
+zip = "2"
 
 [profile.release]
 strip = true

@@ -49,6 +49,7 @@
     saveUpdateFile: (filename, data) => invoke("save_update_file", { filename, data: Array.from(data) }),
     openDownloadsFolder: () => invoke("open_downloads_folder"),
     installUpdate: () => invoke("install_update"),
+    applyUpdate: (zipPath) => invoke("apply_update", { zipPath }),
 
     // checkUpdates 和 downloadUpdate 已移到 app.js 中用 JS fetch 实现
     checkUpdates: () => window._ftCheckUpdates ? window._ftCheckUpdates() : Promise.reject(new Error("更新检查未初始化")),
