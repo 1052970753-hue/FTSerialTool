@@ -169,26 +169,33 @@ pub async fn apply_update(app: AppHandle, zip_path: String) -> Result<bool, Stri
         let _ = w.eval("renderUpdateProgress({state:'installing',message:'正在替换文件，应用将自动重启...'})");
     }
 
-    // 创建批处理脚本执行替换
-    let bat_path = temp_dir.join("update.bat");
-    let current_exe_str = current_exe.to_string_lossy();
-    let new_exe_str = new_exe_path.to_string_lossy();
-    let temp_dir_str = temp_dir.to_string_lossy();
+    // 先把新 exe 复制到当前 exe 同目录下的临时文件名
+    let exe_dir = current_exe.parent().unwrap_or(&temp_dir);
+    let temp_new = exe_dir.join("__update_new.exe");
+    let _ = fs::copy(&new_exe_path, &temp_new);
+
+    // 创建批处理脚本：重命名当前 exe（不删除），替换，启动，清理
+    let bat_path = exe_dir.join("__update.bat");
+    let current_str = current_exe.to_string_lossy().to_string();
+    let temp_new_str = temp_new.to_string_lossy().to_string();
+    let old_str = format!("{}.old", current_str);
+    let temp_dir_str = temp_dir.to_string_lossy().to_string();
 
     let bat_content = format!(
-        r#"@echo off
-chcp 65001 >nul 2>&1
-timeout /t 2 /nobreak >nul
-:retry
-del "{current}" >nul 2>&1
-if exist "{current}" goto retry
-copy "{new}" "{current}" >nul
-start "" "{current}"
-rd /s /q "{temp}" >nul 2>&1
-del "%~f0" >nul 2>&1
-"#,
-        current = current_exe_str,
-        new = new_exe_str,
+        "@echo off\r\n\
+         ping -n 3 127.0.0.1 >nul\r\n\
+         :retry\r\n\
+         ren \"{current}\" *.old >nul 2>&1\r\n\
+         if exist \"{current}\" goto retry\r\n\
+         move /y \"{temp_new}\" \"{current}\" >nul\r\n\
+         start \"\" \"{current}\"\r\n\
+         ping -n 2 127.0.0.1 >nul\r\n\
+         del \"{old}\" >nul 2>&1\r\n\
+         rd /s /q \"{temp}\" >nul 2>&1\r\n\
+         del \"%~f0\" >nul 2>&1\r\n",
+        current = current_str,
+        temp_new = temp_new_str,
+        old = old_str,
         temp = temp_dir_str,
     );
 
@@ -197,13 +204,12 @@ del "%~f0" >nul 2>&1
         .write_all(bat_content.as_bytes())
         .map_err(|e| format!("写入更新脚本失败: {}", e))?;
 
-    // 启动批处理脚本
+    // 启动批处理脚本（同一个窗口，不用 start）
     std::process::Command::new("cmd")
-        .args(["/C", "start", "", bat_path.to_string_lossy().as_ref()])
+        .args(["/C", bat_path.to_string_lossy().as_ref()])
         .spawn()
         .map_err(|e| format!("启动更新脚本失败: {}", e))?;
 
     // 退出当前应用
-    app.exit(0);
-    Ok(true)
+    std::process::exit(0);
 }
