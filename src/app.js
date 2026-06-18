@@ -1,7 +1,7 @@
-const $ = (selector) => document.querySelector(selector);
+﻿const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
-// ── 前端 HTTP 更新检查和下载（避免 Rust async 问题）──
+// 鈹€鈹€ 鍓嶇 HTTP 鏇存柊妫€鏌ュ拰涓嬭浇锛堥伩鍏?Rust async 闂锛夆攢鈹€
 function compareVersions(a, b) {
   const pa = String(a).replace(/^v/i, "").split(/[.-]/).map(Number);
   const pb = String(b).replace(/^v/i, "").split(/[.-]/).map(Number);
@@ -16,9 +16,9 @@ let _pendingAsset = null;
 window._ftCheckUpdates = async function () {
   const config = await window.ftApp.getUpdateConfig();
   const currentVer = await window.ftApp.getVersion();
-  renderUpdateProgress({ state: "checking", message: "正在检查更新..." });
+  renderUpdateProgress({ state: "checking", message: "姝ｅ湪妫€鏌ユ洿鏂?.." });
 
-  // 尝试局域网更新服务器
+  // Try the LAN update mirror first.
   if (config.mirror_url) {
     try {
       const resp = await fetch(config.mirror_url.replace(/\/+$/, "") + "/api/latest", {
@@ -32,7 +32,7 @@ window._ftCheckUpdates = async function () {
           _pendingAsset = { name: data.asset?.name || "", url: assetUrl, size: data.asset?.size || 0 };
           renderUpdateProgress({
             state: "available",
-            message: "发现新版本 " + data.version,
+            message: "鍙戠幇鏂扮増鏈?" + data.version,
             latest: data.version,
             current: currentVer,
             size: data.asset?.size || 0,
@@ -40,18 +40,18 @@ window._ftCheckUpdates = async function () {
           });
           return;
         } else {
-          renderUpdateProgress({ state: "current", message: "当前已是最新版本 " + currentVer });
+          renderUpdateProgress({ state: "current", message: "褰撳墠宸叉槸鏈€鏂扮増鏈?" + currentVer });
           return;
         }
       }
     } catch (e) { /* fall through to GitHub */ }
   }
 
-  // 尝试 GitHub
+  // 灏濊瘯 GitHub
   if (config.repository) {
     try {
       const m = config.repository.match(/github\.com[/:]([^/]+)\/([^/]+)$/i) || config.repository.match(/^([^/\s]+)\/([^/\s]+)$/);
-      if (!m) { renderUpdateProgress({ state: "error", message: "无效的 GitHub 仓库地址" }); return; }
+      if (!m) { renderUpdateProgress({ state: "error", message: "鏃犳晥鐨?GitHub 浠撳簱鍦板潃" }); return; }
       const resp = await fetch("https://api.github.com/repos/" + m[1] + "/" + m[2] + "/releases/latest", {
         headers: { Accept: "application/vnd.github+json" },
         signal: AbortSignal.timeout(15000),
@@ -65,34 +65,34 @@ window._ftCheckUpdates = async function () {
           _pendingAsset = asset ? { name: asset.name, url: asset.browser_download_url, size: asset.size } : null;
           renderUpdateProgress({
             state: "available",
-            message: "发现新版本 " + ver,
+            message: "鍙戠幇鏂扮増鏈?" + ver,
             latest: ver,
             current: currentVer,
             size: asset?.size || 0,
             notes: data.body || "",
           });
         } else {
-          renderUpdateProgress({ state: "current", message: "当前已是最新版本 " + currentVer });
+          renderUpdateProgress({ state: "current", message: "褰撳墠宸叉槸鏈€鏂扮増鏈?" + currentVer });
         }
       } else {
-        renderUpdateProgress({ state: "error", message: "GitHub 请求失败 (" + resp.status + ")" });
+        renderUpdateProgress({ state: "error", message: "GitHub 璇锋眰澶辫触 (" + resp.status + ")" });
       }
     } catch (e) {
-      renderUpdateProgress({ state: "error", message: "网络错误: " + e.message });
+      renderUpdateProgress({ state: "error", message: "缃戠粶閿欒: " + e.message });
     }
   } else {
-    renderUpdateProgress({ state: "current", message: "当前已是最新版本 " + currentVer });
+    renderUpdateProgress({ state: "current", message: "褰撳墠宸叉槸鏈€鏂扮増鏈?" + currentVer });
   }
 };
 
 window._ftDownloadUpdate = async function () {
-  if (!_pendingAsset) { renderUpdateProgress({ state: "error", message: "没有待下载的更新" }); return; }
+  if (!_pendingAsset) { renderUpdateProgress({ state: "error", message: "娌℃湁寰呬笅杞界殑鏇存柊" }); return; }
   const asset = _pendingAsset;
-  renderUpdateProgress({ state: "downloading", message: "正在下载 " + asset.name, progress: 0 });
+  renderUpdateProgress({ state: "downloading", message: "姝ｅ湪涓嬭浇 " + asset.name, progress: 0 });
 
   try {
     const resp = await fetch(asset.url);
-    if (!resp.ok) throw new Error("下载失败 (" + resp.status + ")");
+    if (!resp.ok) throw new Error("涓嬭浇澶辫触 (" + resp.status + ")");
     const total = Number(resp.headers.get("content-length")) || asset.size || 0;
     const reader = resp.body.getReader();
     const chunks = [];
@@ -106,28 +106,27 @@ window._ftDownloadUpdate = async function () {
       const progress = total ? received / total : 0;
       renderUpdateProgress({
         state: "downloading",
-        message: "正在下载 " + asset.name,
+        message: "姝ｅ湪涓嬭浇 " + asset.name,
         progress,
         received,
         total,
       });
     }
 
-    // 合并 chunks
+    // 鍚堝苟 chunks
     const blob = new Blob(chunks);
     const data = new Uint8Array(await blob.arrayBuffer());
 
-    // 保存到文件
-    const savedPath = await window.ftApp.saveUpdateFile(asset.name, data);
+    // 淇濆瓨鍒版枃浠?    const savedPath = await window.ftApp.saveUpdateFile(asset.name, data);
     renderUpdateProgress({
       state: "ready",
-      message: "下载完成: " + savedPath,
+      message: "涓嬭浇瀹屾垚: " + savedPath,
       progress: 1,
       target: savedPath,
     });
     _pendingAsset.savedPath = savedPath;
   } catch (e) {
-    renderUpdateProgress({ state: "error", message: "下载失败: " + e.message });
+    renderUpdateProgress({ state: "error", message: "涓嬭浇澶辫触: " + e.message });
   }
 };
 
@@ -219,10 +218,12 @@ function getFieldTypeOptions() {
     ["int8", "I8"],
     ["int16", "I16"],
     ["uint16", "U16"],
+    ["uint24", "U24"],
     ["uint32", "U32"],
     ["int32", "I32"],
     ["float", "Float"],
     ["checksum8", "SUM8"],
+    ["checksum8xor55", "SUM8^55"],
     ["crc16", "CRC16"],
     ["tail", t("typeTail")],
   ];
@@ -235,10 +236,12 @@ function getParserTypeOptions() {
     ["int8", "I8"],
     ["uint16", "U16"],
     ["int16", "I16"],
+    ["uint24", "U24"],
     ["uint32", "U32"],
     ["int32", "I32"],
     ["float", "Float"],
     ["checksum8", "SUM8"],
+    ["checksum8xor55", "SUM8^55"],
     ["tail", t("typeTail")],
   ];
 }
@@ -249,6 +252,7 @@ function getControlTypeOptions() {
     ["slider", t("ctrlSlider")],
     ["switch", t("ctrlSwitch")],
     ["number", t("ctrlNumber")],
+    ["select", "涓嬫媺閫夋嫨"],
   ];
 }
 
@@ -312,6 +316,10 @@ const state = {
   dashboardSliderDrag: null,
   sendTimers: {},
   packetCycleTimers: {},
+  txQueue: Promise.resolve(),
+  txPendingKeys: {},
+  txScheduledKeys: {},
+  txQueueBusy: false,
   cyclePacketIndex: 0,
   dashboardWidgets: [],
   dashboardSkin: "clean",
@@ -324,10 +332,198 @@ const state = {
   profiles: [],
   activeProfileIndex: 0,
   workspaceView: localStorage.getItem("ftWorkspaceView") || "general",
+  vacuumPowerPresetIndex: 0,
+  vacuumDataPage: "main",
   generalEditor: "data",
 };
 
 state.profiles = [state.profile];
+
+function createVacuumFixedProfile() {
+  return {
+    groupName: "LG吸尘器6861Q2固定协议",
+    protocolMode: "fixed",
+    workspace: "vacuum",
+    packets: [
+      {
+        name: "MAIN",
+        vacuumPage: "main",
+        enabled: true,
+        delay: 50,
+        trigger: true,
+        cycleMs: 100,
+        fields: [
+          { type: "const", name: "帧头", bytes: "AA" },
+          { type: "const", name: "长度", bytes: "0B" },
+          { type: "const", name: "设备类型", bytes: "20" },
+          { type: "const", name: "帧ID", bytes: "11" },
+          { type: "ui", name: "目标功率档位", value: 0, control: "powerPreset" },
+          { type: "uint16", name: "功率控制", role: "vacuumPower", value: 100, endian: "big", control: "slider", min: 0, max: 595, step: 1 },
+          { type: "uint8", name: "堵风口模式", value: 0, control: "select", options: [
+            { value: 0, label: "0 - 关闭" },
+            { value: 1, label: "1 - 堵风口4次" },
+            { value: 2, label: "2 - 堵风口10次" },
+          ] },
+          { type: "uint16", name: "电池电压(mV)", value: 15000, endian: "big", control: "number", min: 0, max: 65535, step: 1 },
+          { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 8 },
+          { type: "tail", name: "帧尾", bytes: "BB" },
+        ],
+      },
+      {
+        name: "FCT",
+        vacuumPage: "fct",
+        enabled: true,
+        delay: 50,
+        trigger: true,
+        cycleMs: 100,
+        fields: [
+          { type: "const", name: "帧头", bytes: "AA" },
+          { type: "const", name: "长度", bytes: "08" },
+          { type: "const", name: "设备类型", bytes: "60" },
+          { type: "const", name: "帧ID", bytes: "30" },
+          { type: "uint16", name: "FCT功率(W)", value: 100, endian: "big", control: "slider", min: 0, max: 595, step: 1 },
+          { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 5 },
+          { type: "tail", name: "帧尾", bytes: "BB" },
+        ],
+      },
+      {
+        name: "LQC",
+        vacuumPage: "lqc",
+        enabled: true,
+        delay: 50,
+        trigger: true,
+        cycleMs: 100,
+        fields: [
+          { type: "const", name: "帧头", bytes: "AA" },
+          { type: "const", name: "长度", bytes: "08" },
+          { type: "const", name: "设备类型", bytes: "70" },
+          { type: "const", name: "帧ID", bytes: "30" },
+          { type: "uint16", name: "LQC功率(W)", value: 100, endian: "big", control: "slider", min: 0, max: 595, step: 1 },
+          { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 5 },
+          { type: "tail", name: "帧尾", bytes: "BB" },
+        ],
+      },
+    ],
+    parsers: [
+      {
+        name: "MAIN回复",
+        enabled: true,
+        fields: [
+          { type: "const", name: "帧头", bytes: "AA", show: false, curve: false },
+          { type: "const", name: "长度", bytes: "15", show: false, curve: false },
+          { type: "const", name: "设备类型", bytes: "10", show: false, curve: false },
+          { type: "const", name: "帧ID", bytes: "12", show: false, curve: false },
+          { type: "uint8", name: "电机信息", show: true, curve: false, widget: "metric", min: 0, max: 255 },
+          { type: "uint16", name: "目标功率(W)", endian: "big", show: true, curve: true, widget: "metric", min: 0, max: 595 },
+          { type: "uint16", name: "实际功率(W)", endian: "big", show: true, curve: true, widget: "gauge", min: 0, max: 595 },
+          { type: "uint24", name: "目标转速(RPM)", endian: "big", show: true, curve: true, widget: "metric", min: 0, max: 120000 },
+          { type: "uint24", name: "实际转速(RPM)", endian: "big", show: true, curve: true, widget: "gauge", min: 0, max: 120000 },
+          { type: "uint8", name: "NTC温度(℃)", show: true, curve: true, widget: "metric", min: 0, max: 150 },
+          { type: "uint8", name: "堵风口状态", show: true, curve: true, widget: "lamp", min: 0, max: 4 },
+          { type: "uint16", name: "故障码", endian: "big", show: true, curve: true, widget: "metric", min: 0, max: 65535 },
+          { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 18, show: false, curve: false },
+          { type: "tail", name: "帧尾", bytes: "BB", show: false, curve: false },
+        ],
+      },
+      {
+        name: "FCT回复",
+        enabled: true,
+        fields: [
+          { type: "const", name: "帧头", bytes: "AA", show: false, curve: false },
+          { type: "const", name: "长度", bytes: "0F", show: false, curve: false },
+          { type: "const", name: "设备类型", bytes: "90", show: false, curve: false },
+          { type: "const", name: "帧ID", bytes: "12", show: false, curve: false },
+          { type: "uint24", name: "FCT实际转速(RPM)", endian: "big", show: true, curve: true, widget: "gauge", min: 0, max: 120000 },
+          { type: "uint16", name: "FCT校准值", endian: "big", show: true, curve: false, widget: "metric", min: 0, max: 65535 },
+          { type: "uint32", name: "软件版本", endian: "big", show: true, curve: false, widget: "metric", min: 0, max: 4294967295 },
+          { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 12, show: false, curve: false },
+          { type: "tail", name: "帧尾", bytes: "BB", show: false, curve: false },
+        ],
+      },
+      {
+        name: "LQC回复",
+        enabled: true,
+        fields: [
+          { type: "const", name: "帧头", bytes: "AA", show: false, curve: false },
+          { type: "const", name: "长度", bytes: "0B", show: false, curve: false },
+          { type: "const", name: "设备类型", bytes: "80", show: false, curve: false },
+          { type: "const", name: "帧ID", bytes: "12", show: false, curve: false },
+          { type: "uint24", name: "LQC实际转速(RPM)", endian: "big", show: true, curve: true, widget: "gauge", min: 0, max: 120000 },
+          { type: "uint16", name: "LQC校准值", endian: "big", show: true, curve: false, widget: "metric", min: 0, max: 65535 },
+          { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 8, show: false, curve: false },
+          { type: "tail", name: "帧尾", bytes: "BB", show: false, curve: false },
+        ],
+      },
+    ],
+  };
+}
+
+function ensureVacuumFixedProfile() {
+  const existing = state.profiles.findIndex((profile) => profile.workspace === "vacuum");
+  if (existing >= 0) {
+    normalizeVacuumProtocol(state.profiles[existing]);
+    return existing;
+  }
+  state.profiles.push(createDefaultVacuumProfile());
+  normalizeVacuumProtocol(state.profiles[state.profiles.length - 1]);
+  return state.profiles.length - 1;
+}
+
+function createDefaultVacuumProfile() {
+  return createVacuumFixedProfile();
+}
+
+function normalizeVacuumProtocol(profile) {
+  if (!profile || profile.workspace !== "vacuum") return;
+  (profile.packets || []).forEach((packet) => {
+    (packet.fields || []).forEach((field) => {
+      if (["uint16", "uint24", "uint32"].includes(field.type)) field.endian = "big";
+    });
+  });
+  (profile.parsers || []).forEach((parser) => {
+    (parser.fields || []).forEach((field) => {
+      if (["uint16", "uint24", "uint32"].includes(field.type)) field.endian = "big";
+      if (["目标功率(W)", "实际功率(W)", "目标转速(RPM)", "实际转速(RPM)"].includes(field.name)) {
+        field.curve = true;
+        field.show = true;
+      }
+    });
+  });
+  const parserNames = new Set((profile.parsers || []).map((parser) => parser.name));
+  if (!parserNames.has("FCT回复")) {
+    profile.parsers.push({
+      name: "FCT回复",
+      enabled: true,
+      fields: [
+        { type: "const", name: "帧头", bytes: "AA", show: false, curve: false },
+        { type: "const", name: "长度", bytes: "0F", show: false, curve: false },
+        { type: "const", name: "设备类型", bytes: "90", show: false, curve: false },
+        { type: "const", name: "帧ID", bytes: "12", show: false, curve: false },
+        { type: "uint24", name: "FCT实际转速(RPM)", endian: "big", show: true, curve: true, widget: "gauge", min: 0, max: 120000 },
+        { type: "uint16", name: "FCT校准值", endian: "big", show: true, curve: false, widget: "metric", min: 0, max: 65535 },
+        { type: "uint32", name: "软件版本", endian: "big", show: true, curve: false, widget: "metric", min: 0, max: 4294967295 },
+        { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 12, show: false, curve: false },
+        { type: "tail", name: "帧尾", bytes: "BB", show: false, curve: false },
+      ],
+    });
+  }
+  if (!parserNames.has("LQC回复")) {
+    profile.parsers.push({
+      name: "LQC回复",
+      enabled: true,
+      fields: [
+        { type: "const", name: "帧头", bytes: "AA", show: false, curve: false },
+        { type: "const", name: "长度", bytes: "0B", show: false, curve: false },
+        { type: "const", name: "设备类型", bytes: "80", show: false, curve: false },
+        { type: "const", name: "帧ID", bytes: "12", show: false, curve: false },
+        { type: "uint24", name: "LQC实际转速(RPM)", endian: "big", show: true, curve: true, widget: "gauge", min: 0, max: 120000 },
+        { type: "uint16", name: "LQC校准值", endian: "big", show: true, curve: false, widget: "metric", min: 0, max: 65535 },
+        { type: "checksum8xor55", name: "校验", rangeStart: 0, rangeEnd: 8, show: false, curve: false },
+        { type: "tail", name: "帧尾", bytes: "BB", show: false, curve: false },
+      ],
+    });
+  }
+}
 
 function createDefaultProfile() {
   return {
@@ -714,7 +910,7 @@ function updateBaudRateUi() {
   els.customBaudLabel?.classList.toggle("hidden", !(els.linkType.value === "usb" && els.baudRate.value === "custom"));
 }
 
-async function sendBytes(bytes, label = "") {
+async function writeBytesNow(bytes) {
   if (!bytes?.length) return;
   if (state.connected && state.transport === "tcp" && window.ftTcpSerial) {
     await window.ftTcpSerial.write([...bytes]);
@@ -727,8 +923,34 @@ async function sendBytes(bytes, label = "") {
   } else if (state.connected && state.writer) {
     await state.writer.write(bytes);
   }
-  addLog("tx", bytes);
-  if (label) appendTerminal(`\n> ${label}: ${toHex(bytes)}\n`);
+}
+
+function enqueueSendBytes(bytes, label = "", key = null) {
+  if (!bytes?.length) return Promise.resolve();
+  if (key) {
+    state.txPendingKeys[key] = { bytes, label };
+    if (state.txScheduledKeys[key]) return state.txQueue;
+    state.txScheduledKeys[key] = true;
+  }
+  const task = async () => {
+    const payload = key ? state.txPendingKeys[key] : { bytes, label };
+    if (!payload) return;
+    if (key) delete state.txPendingKeys[key];
+    if (key) delete state.txScheduledKeys[key];
+    await writeBytesNow(payload.bytes);
+    addLog("tx", payload.bytes);
+    if (payload.label) appendTerminal(`\n> ${payload.label}: ${toHex(payload.bytes)}\n`);
+  };
+  state.txQueue = state.txQueue.then(task, task);
+  return state.txQueue.catch((err) => addLog("error", err.message || String(err), { css: "error" }));
+}
+
+async function sendBytes(bytes, label = "", options = {}) {
+  if (!bytes?.length) return;
+  if (options.skipIfBusy && state.txQueueBusy) return;
+  state.txQueueBusy = true;
+  await enqueueSendBytes(bytes, label, options.key);
+  state.txQueueBusy = false;
 }
 
 async function sendRaw() {
@@ -760,13 +982,20 @@ function stopCycleSend(updateCheckbox = true) {
 
 function fieldLength(field) {
   if (field.type === "const" || field.type === "tail") return parseHex(field.bytes || "").length;
-  if (field.type === "uint8" || field.type === "int8" || field.type === "checksum8") return 1;
+  if (field.type === "uint8" || field.type === "int8" || field.type === "checksum8" || field.type === "checksum8xor55") return 1;
   if (field.type === "uint16" || field.type === "int16" || field.type === "crc16") return 2;
+  if (field.type === "uint24") return 3;
   if (field.type === "uint32" || field.type === "int32" || field.type === "float") return 4;
   return 0;
 }
 
 function encodeNumber(field) {
+  if (field.type === "uint24") {
+    const value = Math.max(0, Math.min(0xffffff, Number(field.value) || 0));
+    return field.endian === "big"
+      ? [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff]
+      : [value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff];
+  }
   const len = fieldLength(field);
   const buf = new ArrayBuffer(len);
   const view = new DataView(buf);
@@ -787,11 +1016,12 @@ function buildPacket(packet) {
   for (const field of packet.fields) {
     if (field.type === "const" || field.type === "tail") {
       bytes.push(...parseHex(field.bytes || ""));
-    } else if (field.type === "checksum8") {
+    } else if (field.type === "checksum8" || field.type === "checksum8xor55") {
       const start = Math.max(0, Number(field.rangeStart) || 0);
       const end = Math.min(bytes.length - 1, Number(field.rangeEnd) || bytes.length - 1);
       let sum = 0;
       for (let i = start; i <= end; i++) sum = (sum + bytes[i]) & 0xff;
+      if (field.type === "checksum8xor55") sum ^= 0x55;
       bytes.push(sum);
     } else if (field.type === "crc16") {
       const start = Math.max(0, Number(field.rangeStart) || 0);
@@ -816,6 +1046,12 @@ function crc16Modbus(bytes) {
 
 function readNumber(bytes, offset, field) {
   const len = fieldLength(field);
+  if (field.type === "uint24") {
+    const b0 = bytes[offset] || 0;
+    const b1 = bytes[offset + 1] || 0;
+    const b2 = bytes[offset + 2] || 0;
+    return field.endian === "big" ? (b0 << 16) | (b1 << 8) | b2 : (b2 << 16) | (b1 << 8) | b0;
+  }
   const view = new DataView(new Uint8Array(bytes.slice(offset, offset + len)).buffer);
   const little = field.endian !== "big";
   if (field.type === "uint8") return view.getUint8(0);
@@ -878,11 +1114,12 @@ function parseFrame(parser, frame) {
     if (field.type === "const" || field.type === "tail") {
       const expected = [...parseHex(field.bytes || "")];
       if (!arraysEqual(slice, expected)) return { ok: false };
-    } else if (field.type === "checksum8") {
+    } else if (field.type === "checksum8" || field.type === "checksum8xor55") {
       const start = Math.max(0, Number(field.rangeStart) || 0);
       const end = Math.min(frame.length - 1, Number(field.rangeEnd) || offset - 1);
       let sum = 0;
       for (let i = start; i <= end; i++) sum = (sum + frame[i]) & 0xff;
+      if (field.type === "checksum8xor55") sum ^= 0x55;
       if (slice[0] !== sum) return { ok: false };
     } else {
       const raw = readNumber(frame, offset, field);
@@ -970,7 +1207,7 @@ function renderMetrics() {
   syncDashboardFromParserDefinitions();
   els.metricGrid.innerHTML = "";
   if (!state.dashboardWidgets.length) {
-    els.metricGrid.innerHTML = `<div class=”dashboard-empty”>${t('emptyMetric')}</div>`;
+    els.metricGrid.innerHTML = `<div class=鈥漝ashboard-empty鈥?${t('emptyMetric')}</div>`;
     return;
   }
   const frag = document.createDocumentFragment();
@@ -986,21 +1223,52 @@ function renderMetrics() {
   els.metricGrid.appendChild(frag);
 }
 
+function getVacuumPacketPage(packet) {
+  if (packet?.vacuumPage) return packet.vacuumPage;
+  const hasControl = (packet?.fields || []).some((field) => field.control && field.control !== "none");
+  if (!hasControl) return "hidden";
+  const bytes = (packet?.fields || [])
+    .filter((field) => field.type === "const")
+    .map((field) => String(field.bytes || "").trim().toUpperCase());
+  if (bytes.includes("60")) return "fct";
+  if (bytes.includes("70")) return "lqc";
+  return "main";
+}
+
+function renderVacuumDataTabs() {
+  const tabs = [
+    ["main", "MAIN"],
+    ["fct", "FCT"],
+    ["lqc", "LQC"],
+  ];
+  return `<div class="vacuum-data-tabs">${tabs.map(([value, label]) =>
+    `<button class="${state.vacuumDataPage === value ? "active" : ""}" data-vacuum-data-page="${value}">${label}</button>`
+  ).join("")}</div>`;
+}
+
 function renderSendDashboardControls() {
   if (!els.sendControlGrid) return;
-  const controls = state.profile.packets.flatMap((packet, packetIndex) =>
-    (packet.fields || [])
+  const vacuum = state.workspaceView === "vacuum" && state.profile.workspace === "vacuum";
+  const packets = vacuum
+    ? state.profile.packets.filter((packet) => getVacuumPacketPage(packet) === state.vacuumDataPage)
+    : state.profile.packets;
+  const controls = packets.flatMap((packet) => {
+    const packetIndex = state.profile.packets.indexOf(packet);
+    return (packet.fields || [])
       .map((field, fieldIndex) => ({ packet, packetIndex, field, fieldIndex }))
-      .filter(({ field }) => field.control && field.control !== "none"));
+      .filter(({ field }) => field.control && field.control !== "none");
+  });
   els.sendControlGrid.innerHTML = "";
+  if (vacuum) els.sendControlGrid.insertAdjacentHTML("beforeend", renderVacuumDataTabs());
   if (!controls.length) {
-    els.sendControlGrid.innerHTML = `<div class=”dashboard-empty”>${t('emptySendCtrl')}</div>`;
+    els.sendControlGrid.innerHTML = `<div class=鈥漝ashboard-empty鈥?${t('emptySendCtrl')}</div>`;
     return;
   }
   const frag = document.createDocumentFragment();
   for (const item of controls) {
     const card = document.createElement("div");
-    card.className = `metric-card metric-${item.field.control === "number" ? "metric" : item.field.control} skin-${state.dashboardSkin}`;
+    const controlClass = ["number", "select", "powerPreset"].includes(item.field.control) ? "metric" : item.field.control;
+    card.className = `metric-card metric-${controlClass} skin-${state.dashboardSkin}`;
     card.innerHTML = renderSendDashboardControl(item);
     frag.appendChild(card);
   }
@@ -1008,15 +1276,26 @@ function renderSendDashboardControls() {
 }
 
 function renderPacketCycleControls() {
-  const packets = state.profile.packets || [];
+  const vacuum = state.workspaceView === "vacuum" && state.profile.workspace === "vacuum";
+  const packets = vacuum
+    ? (state.profile.packets || []).filter((packet) => getVacuumPacketPage(packet) === state.vacuumDataPage)
+    : (state.profile.packets || []);
   state.cyclePacketIndex = Math.min(Math.max(0, state.cyclePacketIndex), Math.max(0, packets.length - 1));
   const packet = packets[state.cyclePacketIndex];
+  const packetIndex = state.profile.packets.indexOf(packet);
+  const skinSelect = vacuum
+    ? `<label class="vacuum-skin-inline">皮肤<select data-vacuum-skin>${[["clean", "清爽"], ["glass", "玻璃"], ["industrial", "工业"], ["contrast", "高对比"]].map(([value, label]) => `<option value="${value}" ${state.dashboardSkin === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`
+    : "";
   const html = packet
     ? `<div class="packet-cycle-controls">
-        <select data-cycle-packet-select>${packets.map((item, index) => `<option value="${index}" ${index === state.cyclePacketIndex ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select>
-        <label class="check-inline"><input type="checkbox" data-packet-cycle-enabled="${state.cyclePacketIndex}" ${packet.cycleEnabled ? "checked" : ""}>${t('cycleSend')}</label>
-        <label class="packet-cycle-period">${t('cycleMs')}<input type="number" min="10" step="10" value="${packet.cycleMs || 100}" data-packet-cycle-ms="${state.cyclePacketIndex}"></label>
-        <button data-packet-cycle-send="${state.cyclePacketIndex}">${t('send')}</button>
+        ${skinSelect}
+        <select data-cycle-packet-select>${packets.map((item) => {
+          const index = state.profile.packets.indexOf(item);
+          return `<option value="${index}" ${index === packetIndex ? "selected" : ""}>${escapeHtml(item.name)}</option>`;
+        }).join("")}</select>
+        <label class="check-inline"><input type="checkbox" data-packet-cycle-enabled="${packetIndex}" ${packet.cycleEnabled ? "checked" : ""}>${t('cycleSend')}</label>
+        <label class="packet-cycle-period">${t('cycleMs')}<input type="number" min="10" step="10" value="${packet.cycleMs || 100}" data-packet-cycle-ms="${packetIndex}"></label>
+        <button data-packet-cycle-send="${packetIndex}">${t('send')}</button>
       </div>`
     : `<span class="dashboard-hint">${t('noPacket')}</span>`;
   [els.dataPacketCycleControls, els.curvePacketCycleControls].forEach((container) => {
@@ -1049,7 +1328,7 @@ function startPacketCycle(packetIndex) {
   stopPacketCycle(packetIndex, false);
   packet.cycleEnabled = true;
   packet.cycleMs = Math.max(10, Number(packet.cycleMs) || 100);
-  sendBytes(buildPacket(packet), packet.name);
+  sendBytes(buildPacket(packet), packet.name, { skipIfBusy: true });
   state.packetCycleTimers[String(packetIndex)] = setInterval(() => {
     const current = state.profile.packets[packetIndex];
     if (!current?.cycleEnabled) {
@@ -1057,15 +1336,34 @@ function startPacketCycle(packetIndex) {
       renderPacketCycleControls();
       return;
     }
-    sendBytes(buildPacket(current), current.name);
+    sendBytes(buildPacket(current), current.name, { skipIfBusy: true });
   }, packet.cycleMs);
 }
 
 function renderSendDashboardControl({ packet, packetIndex, field, fieldIndex }) {
   const key = `${packetIndex}:${fieldIndex}`;
-  const label = `${packet.name} / ${field.name || t('field')}`;
+  const vacuum = state.workspaceView === "vacuum" && state.profile.workspace === "vacuum";
+  const label = vacuum ? vacuumControlLabel(packet, field) : `${packet.name} / ${field.name || t('field')}`;
   const value = Number(field.value) || 0;
   const common = `<div class="metric-name">${escapeHtml(label)}</div>`;
+  if (field.control === "powerPreset") {
+    const power = Number(findVacuumPowerField(packet)?.value) || 0;
+    const powerOn = power > 0;
+    return `${common}
+      <div class="vacuum-power-pad">
+        <button class="vacuum-gear-btn" data-power-gear="${packetIndex}:down">档位-</button>
+        <button class="vacuum-power-main ${powerOn ? "on" : "off"}" data-power-toggle="${packetIndex}">${powerOn ? "关机" : "开机"}</button>
+        <button class="vacuum-gear-btn" data-power-gear="${packetIndex}:up">档位+</button>
+      </div>`;
+  }
+  if (field.control === "select") {
+    const optionItems = (field.options || []).map((item) => {
+      const optionValue = typeof item === "object" ? item.value : item;
+      const optionLabel = typeof item === "object" ? item.label : item;
+      return `<option value="${escapeHtml(optionValue)}" ${Number(optionValue) === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`;
+    }).join("");
+    return `${common}<select class="dashboard-number" data-dashboard-send-control="${key}">${optionItems}</select>`;
+  }
   if (field.control === "switch") {
     const mode = field.switchMode || "toggle";
     if (mode === "momentary") {
@@ -1077,6 +1375,17 @@ function renderSendDashboardControl({ packet, packetIndex, field, fieldIndex }) 
     return `${common}<div class="dashboard-slider-row"><input class="widget-slider" type="range" min="${field.min ?? 0}" max="${field.max ?? 1000}" step="${sliderStep(field)}" value="${value}" data-dashboard-send-control="${key}"><input class="dashboard-number compact-number" type="number" min="${field.min ?? 0}" max="${field.max ?? 1000}" value="${value}" data-dashboard-send-control="${key}"></div>`;
   }
   return `${common}<input class="dashboard-number" type="number" min="${field.min ?? ""}" max="${field.max ?? ""}" value="${value}" data-dashboard-send-control="${key}">`;
+}
+
+function vacuumControlLabel(packet, field) {
+  if (field.control === "powerPreset") return "目标功率档位";
+  const page = getVacuumPacketPage(packet);
+  if (field.control === "slider" && page === "main") return "功率控制";
+  if (field.control === "slider" && page === "fct") return "FCT功率";
+  if (field.control === "slider" && page === "lqc") return "LQC功率";
+  if (field.control === "select") return "堵风口模式";
+  const raw = field.name || t('field');
+  return String(raw).replace(new RegExp("^.*?\\\\s*/\\\\s*"), "");
 }
 
 function createDashboardWidget(type, metric = null, idSeed = "", field = null) {
@@ -1092,9 +1401,9 @@ function createDashboardWidget(type, metric = null, idSeed = "", field = null) {
 
 function guessGaugeMax(field, metric) {
   const text = `${metric || ""} ${field?.name || ""}`.toLowerCase();
-  if (text.includes("电流")) return 100;
-  if (text.includes("电压")) return 1000;
-  if (text.includes("速度") || text.includes("转速") || text.includes("speed") || text.includes("rpm")) return 5000;
+  if (text.includes("电流") || text.includes("current")) return 100;
+  if (text.includes("电压") || text.includes("voltage")) return 1000;
+  if (text.includes("速度") || text.includes("转速") || text.includes("speed") || text.includes("rpm")) return 120000;
   return 5000;
 }
 
@@ -1164,6 +1473,62 @@ function syncSendControlInputs(packetIndex, fieldIndex, value, source = null) {
   updatePacketHexPreview();
 }
 
+function findVacuumPowerField(packet) {
+  return (packet?.fields || []).find((field) => field.name === "鎺у埗鍔熺巼(W)");
+}
+
+function cycleVacuumPowerPreset(packetIndex) {
+  const packet = state.profile.packets[packetIndex];
+  const powerField = findVacuumPowerField(packet);
+  if (!packet || !powerField) return;
+  const presets = [0, 53, 105, 250, 575];
+  const currentIndex = presets.indexOf(Number(powerField.value));
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % presets.length : 0;
+  powerField.value = presets[nextIndex];
+  const powerFieldIndex = packet.fields.indexOf(powerField);
+  if (powerFieldIndex >= 0) syncSendControlInputs(packetIndex, powerFieldIndex, powerField.value);
+  renderSendDashboardControls();
+  renderPacketList();
+  if (packet.trigger) sendBytes(buildPacket(packet), packet.name, { key: `packet:${packetIndex}` });
+}
+
+function findVacuumPowerField(packet) {
+  return (packet?.fields || []).find((field) =>
+    field.role === "vacuumPower" ||
+    (field.control === "slider" && Number(field.min) === 0 && Number(field.max) === 595)
+  );
+}
+
+function setVacuumPower(packetIndex, power) {
+  const packet = state.profile.packets[packetIndex];
+  const powerField = findVacuumPowerField(packet);
+  if (!packet || !powerField) return;
+  powerField.value = power;
+  const powerFieldIndex = packet.fields.indexOf(powerField);
+  if (powerFieldIndex >= 0) syncSendControlInputs(packetIndex, powerFieldIndex, powerField.value);
+  renderSendDashboardControls();
+  renderPacketList();
+  if (packet.trigger) sendBytes(buildPacket(packet), packet.name, { key: `packet:${packetIndex}` });
+}
+
+function stepVacuumPowerPreset(packetIndex, direction = "up") {
+  const packet = state.profile.packets[packetIndex];
+  const powerField = findVacuumPowerField(packet);
+  if (!packet || !powerField) return;
+  const presets = [0, 53, 105, 250, 575];
+  const currentIndex = presets.indexOf(Number(powerField.value));
+  const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+  const delta = direction === "down" ? -1 : 1;
+  const nextIndex = (baseIndex + delta + presets.length) % presets.length;
+  setVacuumPower(packetIndex, presets[nextIndex]);
+}
+
+function toggleVacuumPower(packetIndex) {
+  const packet = state.profile.packets[packetIndex];
+  const power = Number(findVacuumPowerField(packet)?.value) || 0;
+  setVacuumPower(packetIndex, power > 0 ? 0 : 53);
+}
+
 function queueTriggeredPacketSend(packetIndex, immediate = false) {
   const packet = state.profile.packets[packetIndex];
   if (!packet?.trigger) return;
@@ -1171,7 +1536,7 @@ function queueTriggeredPacketSend(packetIndex, immediate = false) {
   const sendNow = () => {
     clearTimeout(state.sendTimers[key]);
     state.sendTimers[key] = null;
-    sendBytes(buildPacket(packet), packet.name);
+    sendBytes(buildPacket(packet), packet.name, { key: `packet:${packetIndex}` });
   };
   if (immediate) {
     sendNow();
@@ -1179,6 +1544,11 @@ function queueTriggeredPacketSend(packetIndex, immediate = false) {
   }
   if (state.sendTimers[key]) return;
   state.sendTimers[key] = setTimeout(sendNow, 45);
+}
+
+function sendTriggeredPacket(packetIndex) {
+  const packet = state.profile.packets[packetIndex];
+  if (packet?.trigger) sendBytes(buildPacket(packet), packet.name, { key: `packet:${packetIndex}` });
 }
 
 function setDashboardSendControlValue(target, immediate = false) {
@@ -1207,7 +1577,7 @@ function updatePacketFieldInputs(idx) {
   const packet = state.profile.packets[state.activePacket];
   const field = packet?.fields?.[idx];
   if (!field) return;
-  document.querySelectorAll(`[data-field-prop="${idx}:value"], [data-control-field="${idx}"], [data-control-number="${idx}"]`).forEach((input) => {
+  document.querySelectorAll(`[data-field-prop="${idx}:value"], [data-control-field="${idx}"], [data-control-number="${idx}"], [data-control-select="${idx}"]`).forEach((input) => {
     input.value = field.value ?? 0;
   });
   document.querySelectorAll(`[data-control-switch="${idx}"]`).forEach((input) => {
@@ -1382,6 +1752,7 @@ function fieldTypeRange(type) {
     int8: { min: -128, max: 127 },
     uint16: { min: 0, max: 65535 },
     int16: { min: -32768, max: 32767 },
+    uint24: { min: 0, max: 16777215 },
     uint32: { min: 0, max: 4294967295 },
     int32: { min: -2147483648, max: 2147483647 },
   };
@@ -1564,7 +1935,7 @@ function renderPacketFields() {
   }
   const rows = packet.fields
     .map((field, idx) => {
-      const numericField = !["const", "tail", "checksum8", "crc16"].includes(field.type);
+      const numericField = !["const", "tail", "checksum8", "checksum8xor55", "crc16"].includes(field.type);
       const valueInput = field.type === "const" || field.type === "tail"
         ? `<input value="${escapeHtml(field.bytes || "")}" data-field-prop="${idx}:bytes">`
         : `<input type="number" value="${field.value ?? 0}" data-field-prop="${idx}:value">`;
@@ -1587,8 +1958,8 @@ function renderPacketFields() {
           ${controlSelect}
           ${limitInputs}
           <div class="field-actions">
-            <button class="mini" data-move-field-up="${idx}" ${idx === 0 ? "disabled" : ""}>↑</button>
-            <button class="mini" data-move-field-down="${idx}" ${idx === packet.fields.length - 1 ? "disabled" : ""}>↓</button>
+            <button class="mini" data-move-field-up="${idx}" ${idx === 0 ? "disabled" : ""}>鈫?/button>
+            <button class="mini" data-move-field-down="${idx}" ${idx === packet.fields.length - 1 ? "disabled" : ""}>鈫?/button>
             <button class="mini danger" data-delete-field="${idx}">${t('del')}</button>
           </div>
         </div>`;
@@ -1622,6 +1993,31 @@ function renderGeneratedControls(packet) {
 function renderPacketControl(field, idx, packet) {
   const name = escapeHtml(field.name || t('control'));
   const value = Number(field.value) || 0;
+  if (field.control === "powerPreset") {
+    const packetIndex = state.profile.packets.indexOf(packet);
+    const power = Number(findVacuumPowerField(packet)?.value) || 0;
+    return `
+      <div class="control-row compact-control">
+        <span>${name}</span>
+        <button class="power-preset-btn" data-power-preset="${packetIndex}">鍒囨崲鍔熺巼锛?{power}W</button>
+        <span></span>
+        <button class="mini" data-control-send="${idx}">${packet.trigger ? t('trigger') : t('send')}</button>
+      </div>`;
+  }
+  if (field.control === "select") {
+    const optionItems = (field.options || []).map((item) => {
+      const optionValue = typeof item === "object" ? item.value : item;
+      const optionLabel = typeof item === "object" ? item.label : item;
+      return `<option value="${escapeHtml(optionValue)}" ${Number(optionValue) === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`;
+    }).join("");
+    return `
+      <div class="control-row compact-control">
+        <span>${name}</span>
+        <select data-control-select="${idx}">${optionItems}</select>
+        <span></span>
+        <button class="mini" data-control-send="${idx}">${packet.trigger ? t('trigger') : t('send')}</button>
+      </div>`;
+  }
   if (field.control === "switch") {
     const mode = field.switchMode || "toggle";
     const switchControl = mode === "momentary"
@@ -1660,7 +2056,7 @@ function renderParserList() {
     item.className = `packet-item ${idx === state.activeParser ? "active" : ""}`;
     item.innerHTML = `
       <input type="checkbox" ${parser.enabled ? "checked" : ""} data-parser-enabled="${idx}">
-      <div class="packet-name">${escapeHtml(parser.name)} · ${frameLength(parser)} bytes</div>
+      <div class="packet-name">${escapeHtml(parser.name)} 路 ${frameLength(parser)} bytes</div>
       <button class="mini" data-edit-parser="${idx}">${t('edit')}</button>
       <button class="mini" data-clone-parser="${idx}">${t('copy')}</button>
       <button class="mini danger" data-delete-parser="${idx}">${t('del')}</button>`;
@@ -1701,8 +2097,8 @@ function renderParserFields() {
           <label class="check-inline"><input type="checkbox" ${field.curve ? "checked" : ""} data-parser-check="${idx}:curve">${t('curve')}</label>
           ${widgetSelect}
           <div class="field-actions">
-            <button class="mini" data-move-parser-field-up="${idx}" ${idx === 0 ? "disabled" : ""}>↑</button>
-            <button class="mini" data-move-parser-field-down="${idx}" ${idx === parser.fields.length - 1 ? "disabled" : ""}>↓</button>
+            <button class="mini" data-move-parser-field-up="${idx}" ${idx === 0 ? "disabled" : ""}>鈫?/button>
+            <button class="mini" data-move-parser-field-down="${idx}" ${idx === parser.fields.length - 1 ? "disabled" : ""}>鈫?/button>
             <button class="mini danger" data-delete-parser-field="${idx}">${t('del')}</button>
           </div>
         </div>`;
@@ -1765,13 +2161,13 @@ function pulsePacketField(packetIndex, fieldIndex) {
   if (packetIndex === state.activePacket) updatePacketFieldInputs(fieldIndex);
   renderSendDashboardControls();
   renderPacketList();
-  if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+  sendTriggeredPacket(packetIndex);
   setTimeout(() => {
     field.value = 0;
     if (packetIndex === state.activePacket) updatePacketFieldInputs(fieldIndex);
     renderSendDashboardControls();
     renderPacketList();
-    if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+    sendTriggeredPacket(packetIndex);
   }, 160);
 }
 
@@ -1877,7 +2273,7 @@ function convertJcomProfile(jcom) {
       : [{ type: "const", name: "Raw", bytes: toHex(base64Bytes(item.HexByteData || "")) }],
   }));
   const parsers = (jcom.RecvHexList || []).map((item) => ({
-    name: item.PacketName || "JCom解析",
+    name: item.PacketName || "JCom瑙ｆ瀽",
     enabled: item.Checked !== false,
     fields: (item.hexFieldContent || []).map(convertJcomParserField),
   }));
@@ -2058,7 +2454,7 @@ function renderHelp() {
     <section class="help-about">
       <strong>${tl('aboutTitle')}</strong>
       <div><span>${tl('aboutAuthor')}</span><b>L.S</b></div>
-      <div><span>${tl('aboutCompany')}</span><b>峰岹科技(青岛)有限公司</b></div>
+      <div><span>${tl('aboutCompany')}</span><b>宄板补绉戞妧(闈掑矝)鏈夐檺鍏徃</b></div>
       <div><span>${tl('aboutWebsite')}</span><a href="https://www.fortiortech.com/" target="_blank" rel="noreferrer">www.fortiortech.com</a></div>
     </section>`;
 }
@@ -2080,9 +2476,9 @@ function applyToolLanguage(language, notifyMain = true) {
   if (notifyMain) window.ftApp?.setLanguage(lang);
 }
 
-/** 更新所有静态 UI 元素的文字 */
+/** 鏇存柊鎵€鏈夐潤鎬?UI 鍏冪礌鐨勬枃瀛?*/
 function updateStaticText() {
-  // 按钮
+  // 鎸夐挳
   const btnMap = {
     connectBtn: state.connected ? "close" : "open",
     demoBtn: state.demoTimer ? "demoStop" : "demo",
@@ -2104,13 +2500,12 @@ function updateStaticText() {
     if (el && !el.classList.contains("active")) el.textContent = t(key);
   }
 
-  // 标签页
-  const tabKeys = ["tabData", "tabCurve", "tabSend", "tabRecv"];
+  // 鏍囩椤?  const tabKeys = ["tabData", "tabCurve", "tabSend", "tabRecv"];
   document.querySelectorAll(".small-tab").forEach((btn, i) => {
     if (tabKeys[i]) btn.textContent = t(tabKeys[i]);
   });
 
-  // 面板标题
+  // 闈㈡澘鏍囬
   const panelSelectors = [".receive-panel .panel-title", ".side-panel .panel-title", ".send-panel .panel-title"];
   const panelKeys = ["panelRecv", "panelGroup", "panelSend"];
   panelSelectors.forEach((sel, i) => {
@@ -2118,7 +2513,7 @@ function updateStaticText() {
     if (el) el.textContent = t(panelKeys[i]);
   });
 
-  // 复选框标签
+  // 澶嶉€夋鏍囩
   const checkMap = {
     hexView: "checkHex", autoScroll: "checkAutoScroll", pauseReceive: "checkPause",
     sendHex: "checkHexSend", cycleSend: "checkCycle", appendNewline: "checkCR", logCsv: "checkCsv",
@@ -2131,7 +2526,7 @@ function updateStaticText() {
     }
   }
 
-  // 设置标签
+  // 璁剧疆鏍囩
   const labelMap = {
     linkType: "labelLink", portSelect: "labelPort", baudRate: "labelBaud",
     toolLanguage: "labelLang", timeFormat: "labelTime", maxLogLines: "labelMaxLog",
@@ -2145,7 +2540,7 @@ function updateStaticText() {
     }
   }
 
-  // 链路下拉框
+  // Link type dropdown.
   const linkKeys = ["linkUsb", "linkBle", "linkTcp"];
   if (els.linkType) {
     [...els.linkType.options].forEach((opt, i) => {
@@ -2153,23 +2548,23 @@ function updateStaticText() {
     });
   }
 
-  // 协议模式下拉框
+  // Protocol mode dropdown.
   if (els.profileMode) {
     els.profileMode.options[0].textContent = t("protoCustom");
     els.profileMode.options[1].textContent = t("protoFixed");
   }
 
-  // 设置面板标题
+  // 璁剧疆闈㈡澘鏍囬
   const settingsTitle = document.querySelector(".settings-panel h2");
   if (settingsTitle) settingsTitle.textContent = t("settingsTitle");
 
-  // 状态栏
+  // 鐘舵€佹爮
   if (!state.connected) {
     els.statusText.textContent = t("disconnected");
     els.connectBtn.textContent = t("open");
   }
 
-  // 浏览器支持文字
+  // Browser/native serial support text.
   if (window.ftUsbSerial) {
     els.browserSupport.textContent = t("nativeUsbOk");
   } else if (!("serial" in navigator)) {
@@ -2224,12 +2619,23 @@ function setWorkspaceView(view, notifyMain = true) {
   const vacuumPanel = $("#vacuumDashboardPanel");
 
   if (next === "vacuum") {
+    const vacuumProfileIndex = ensureVacuumFixedProfile();
+    if (state.activeProfileIndex !== vacuumProfileIndex) activateProfile(vacuumProfileIndex);
+    if (!["main", "fct", "lqc"].includes(state.vacuumDataPage)) state.vacuumDataPage = "main";
+    if (els.baudRate) {
+      els.baudRate.value = "19200";
+      updateBaudRateUi();
+    }
     const activeEditor = document.querySelector(".editor-pane.active")?.id?.replace("Editor", "");
     if (activeEditor && activeEditor !== "curve") state.generalEditor = activeEditor;
     vacuumHost?.appendChild(dataEditor);
     vacuumPanel?.classList.remove("hidden");
     workbench?.classList.add("workspace-vacuum");
   } else {
+    if (state.profile.workspace === "vacuum") {
+      const generalProfileIndex = state.profiles.findIndex((profile) => profile.workspace !== "vacuum");
+      if (generalProfileIndex >= 0) activateProfile(generalProfileIndex);
+    }
     if (dataEditor && dataHome?.parentNode) dataHome.parentNode.insertBefore(dataEditor, dataHome);
     vacuumPanel?.classList.add("hidden");
     workbench?.classList.remove("workspace-vacuum");
@@ -2264,15 +2670,15 @@ function setUpdateProgress(element, label, value) {
 }
 
 function renderUpdateProgress(status = {}) {
-  // 所有非空状态都显示弹窗，让用户看到反馈
+  // 鎵€鏈夐潪绌虹姸鎬侀兘鏄剧ず寮圭獥锛岃鐢ㄦ埛鐪嬪埌鍙嶉
   if (status.state) els.updateProgressModal?.classList.remove("hidden");
-  // "current" 状态 2 秒后自动关闭
+  // "current" 鐘舵€?2 绉掑悗鑷姩鍏抽棴
   if (status.state === "current") setTimeout(() => els.updateProgressModal?.classList.add("hidden"), 2000);
   els.updateProgressModal?.classList.toggle("update-available-mode", status.state === "available");
   els.updateAvailableInfo?.classList.toggle("hidden", status.state !== "available");
   if (status.state === "available") {
     if (els.updateAvailableTitle) els.updateAvailableTitle.textContent = t('newVersion')(status.latest || "");
-    if (els.updateVersionDetail) els.updateVersionDetail.textContent = `${t('currentVersion')(status.current || "-")} · ${t('updatePkg')} ${formatUpdateBytes(status.size)}`;
+    if (els.updateVersionDetail) els.updateVersionDetail.textContent = `${t('currentVersion')(status.current || "-")} 路 ${t('updatePkg')} ${formatUpdateBytes(status.size)}`;
     if (els.updateReleaseNotes) els.updateReleaseNotes.textContent = status.notes || t('noReleaseNotes');
   }
   setUpdateProgress(els.updateDownloadProgress, els.updateDownloadPercent, status.progress);
@@ -2280,7 +2686,7 @@ function renderUpdateProgress(status = {}) {
   if (els.updateProgressStatus) els.updateProgressStatus.textContent = status.message || t('preparingUpdate');
   if (els.updateDownloadDetail && status.state === "downloading") {
     const size = status.total ? `${formatUpdateBytes(status.received)} / ${formatUpdateBytes(status.total)}` : formatUpdateBytes(status.received);
-    els.updateDownloadDetail.textContent = `${size} · ${formatUpdateBytes(status.speed)}/s`;
+    els.updateDownloadDetail.textContent = `${size} 路 ${formatUpdateBytes(status.speed)}/s`;
   }
   if (els.updateDownloadDetail && ["verifying", "ready", "installing"].includes(status.state)) {
     els.updateDownloadDetail.textContent = t('downloadDone');
@@ -2354,6 +2760,22 @@ document.addEventListener("click", async (event) => {
     const packetIndex = Number(target.dataset.packetCycleSend);
     const packet = state.profile.packets[packetIndex];
     if (packet) sendBytes(buildPacket(packet), packet.name);
+  }
+  if (target.dataset.vacuumDataPage !== undefined) {
+    state.vacuumDataPage = target.dataset.vacuumDataPage;
+    state.cyclePacketIndex = 0;
+    renderSendDashboardControls();
+    renderPacketCycleControls();
+  }
+  if (target.dataset.powerGear !== undefined) {
+    const [packetIndex, direction] = target.dataset.powerGear.split(":");
+    stepVacuumPowerPreset(Number(packetIndex), direction);
+  }
+  if (target.dataset.powerToggle !== undefined) {
+    toggleVacuumPower(Number(target.dataset.powerToggle));
+  }
+  if (target.dataset.powerPreset !== undefined) {
+    cycleVacuumPowerPreset(Number(target.dataset.powerPreset));
   }
   if (target.id === "pauseCurveBtn") {
     state.curvePaused = !state.curvePaused;
@@ -2566,9 +2988,9 @@ document.addEventListener("input", (event) => {
     const value = Number(target.value);
     packet.fields[idx].value = value;
     syncSendControlInputs(state.activePacket, idx, value, target);
-    if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+    sendTriggeredPacket(state.activePacket);
   }
-  if (target.dataset.dashboardSendControl) {
+  if (target.dataset.dashboardSendControl && target.tagName !== "SELECT") {
     setDashboardSendControlValue(target, target.type !== "range");
   }
   if (target.dataset.controlField || target.dataset.controlNumber) {
@@ -2580,6 +3002,16 @@ document.addEventListener("change", (event) => {
   const target = event.target;
   if (target.dataset.cyclePacketSelect !== undefined) {
     state.cyclePacketIndex = Number(target.value);
+    renderPacketCycleControls();
+  }
+  if (target.dataset.vacuumSkin !== undefined) {
+    state.dashboardSkin = target.value;
+    if (els.dashboardSkin) els.dashboardSkin.value = target.value;
+    state.dashboardWidgets.forEach((widget) => {
+      widget.skin = target.value;
+    });
+    renderSendDashboardControls();
+    renderMetrics();
     renderPacketCycleControls();
   }
   if (target.dataset.packetCycleEnabled !== undefined) {
@@ -2657,6 +3089,15 @@ document.addEventListener("change", (event) => {
     setDashboardSendControlValue(target, true);
     renderPacketList();
   }
+  if (target.dataset.controlSelect) {
+    const idx = Number(target.dataset.controlSelect);
+    const packet = state.profile.packets[state.activePacket];
+    const value = Number(target.value);
+    packet.fields[idx].value = value;
+    syncSendControlInputs(state.activePacket, idx, value, target);
+    renderPacketList();
+    sendTriggeredPacket(state.activePacket);
+  }
   if (target.dataset.controlSwitch) {
     const idx = Number(target.dataset.controlSwitch);
     const packet = state.profile.packets[state.activePacket];
@@ -2667,12 +3108,12 @@ document.addEventListener("change", (event) => {
       renderPacketList();
       updatePacketFieldInputs(idx);
       renderSendDashboardControls();
-      if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+      sendTriggeredPacket(state.activePacket);
       setTimeout(() => {
         field.value = 0;
         updatePacketFieldInputs(idx);
         renderSendDashboardControls();
-        if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+        sendTriggeredPacket(state.activePacket);
       }, 160);
       return;
     }
@@ -2680,7 +3121,7 @@ document.addEventListener("change", (event) => {
     renderPacketList();
     updatePacketFieldInputs(idx);
     renderSendDashboardControls();
-    if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+    sendTriggeredPacket(state.activePacket);
   }
   if (target.dataset.dashboardSendSwitch) {
     const [packetIndex, fieldIndex] = target.dataset.dashboardSendSwitch.split(":").map(Number);
@@ -2691,20 +3132,20 @@ document.addEventListener("change", (event) => {
       field.value = 1;
       target.checked = true;
       if (packetIndex === state.activePacket) updatePacketFieldInputs(fieldIndex);
-      if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+      sendTriggeredPacket(packetIndex);
       setTimeout(() => {
         field.value = 0;
         target.checked = false;
         if (packetIndex === state.activePacket) updatePacketFieldInputs(fieldIndex);
         renderSendDashboardControls();
-        if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+        sendTriggeredPacket(packetIndex);
       }, 160);
       return;
     }
     field.value = target.checked ? 1 : 0;
     if (packetIndex === state.activePacket) updatePacketFieldInputs(fieldIndex);
     renderSendDashboardControls();
-    if (packet.trigger) sendBytes(buildPacket(packet), packet.name);
+    sendTriggeredPacket(packetIndex);
   }
 });
 
@@ -2906,3 +3347,6 @@ window.ftApp?.getVersion().then((version) => {
   if (els.appVersion) els.appVersion.textContent = `v${version}`;
 });
 drawCurve();
+
+
+

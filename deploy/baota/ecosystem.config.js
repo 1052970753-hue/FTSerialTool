@@ -6,7 +6,7 @@ module.exports = {
       cwd: "/www/wwwroot/ft-updateserver",
       env: {
         FT_PORT: 8765,
-        FT_VERSION: "1.2.14",
+        FT_VERSION: "1.2.18",
         FT_UPLOAD_DIR: "/www/wwwroot/ft-updateserver/uploads",
       },
       instances: 1,

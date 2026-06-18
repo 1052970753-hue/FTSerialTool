@@ -37,7 +37,7 @@
   window.ftApp = {
     getVersion: () => invoke("get_app_version"),
     setLanguage: (lang) => invoke("app_set_language", { language: lang }),
-    setWorkspaceView: () => Promise.resolve(),
+    setWorkspaceView: (view) => invoke("app_set_workspace_view", { view }),
 
     // 更新系统 — check 和 download 由前端 JS 完成，Rust 只做文件操作
     configureUpdates: (s) => invoke("configure_updates", {

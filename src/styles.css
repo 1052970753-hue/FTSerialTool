@@ -294,7 +294,7 @@ textarea {
 }
 
 .main-grid.workspace-vacuum {
-  grid-template-columns: minmax(330px, 0.62fr) minmax(680px, 1.38fr);
+  grid-template-columns: minmax(430px, 0.8fr) minmax(620px, 1.2fr);
   grid-template-rows: minmax(120px, 24fr) minmax(340px, 76fr);
 }
 
@@ -370,16 +370,36 @@ textarea {
   min-height: 0;
 }
 
-.main-grid.workspace-vacuum #dataPacketCycleControls .packet-cycle-controls {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 6px;
-  width: 100%;
+.main-grid.workspace-vacuum .curve-workspace {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
-.main-grid.workspace-vacuum #dataPacketCycleControls .packet-cycle-controls select {
-  grid-column: 1 / -1;
+.main-grid.workspace-vacuum .curve-channel-list {
+  grid-row: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  max-height: 96px;
+  min-height: 48px;
+}
+
+.main-grid.workspace-vacuum .curve-channel {
+  min-width: 190px;
+}
+
+.main-grid.workspace-vacuum #dataPacketCycleControls .packet-cycle-controls {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  gap: 6px;
   width: 100%;
+  align-items: center;
+}
+
+.main-grid.workspace-vacuum #dataPacketCycleControls .packet-cycle-controls select,
+.main-grid.workspace-vacuum #curvePacketCycleControls .packet-cycle-controls select {
+  display: none;
 }
 
 .main-grid.workspace-vacuum #dataPacketCycleControls .packet-cycle-period input {
@@ -388,6 +408,99 @@ textarea {
 
 .main-grid.workspace-vacuum #dataPacketCycleControls .packet-cycle-controls button {
   align-self: center;
+}
+
+.main-grid.workspace-vacuum #vacuumDashboardHost {
+  position: relative;
+}
+
+.main-grid.workspace-vacuum .dashboard-tools {
+  display: none;
+}
+
+.main-grid.workspace-vacuum .dashboard-tools .dashboard-hint {
+  display: none;
+}
+
+.main-grid.workspace-vacuum .dashboard-tools label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.main-grid.workspace-vacuum .dashboard-tools select {
+  width: 96px;
+  height: 26px;
+}
+
+.vacuum-skin-inline {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.vacuum-skin-inline select {
+  display: block !important;
+  width: 82px;
+  height: 26px;
+}
+
+.main-grid.workspace-vacuum .dashboard-slider-row {
+  grid-template-columns: minmax(120px, 1fr) 56px;
+}
+
+.main-grid.workspace-vacuum .compact-number {
+  width: 56px;
+  min-width: 56px;
+  padding: 0 4px;
+  text-align: center;
+}
+
+.vacuum-power-pad {
+  display: grid;
+  grid-template-columns: minmax(68px, 1fr) minmax(76px, 1.1fr) minmax(68px, 1fr);
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.vacuum-gear-btn,
+.vacuum-power-main {
+  width: 100%;
+  height: 34px;
+  justify-content: center;
+  border-radius: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  box-shadow: 0 8px 16px rgba(0, 143, 134, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  transform: translateY(0);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.vacuum-gear-btn {
+  background: var(--accent-soft);
+  border-color: rgba(0, 143, 134, 0.35);
+  color: var(--accent-strong);
+}
+
+.vacuum-power-main.on {
+  background: linear-gradient(180deg, #fff2e1, #ffdba0);
+  border-color: rgba(211, 138, 0, 0.52);
+  color: #704700;
+}
+
+.vacuum-power-main.off {
+  background: linear-gradient(180deg, #e9fbf7, #bceee5);
+  border-color: rgba(0, 143, 134, 0.42);
+  color: var(--accent-strong);
+}
+
+.vacuum-gear-btn:active,
+.vacuum-power-main:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 3px 8px rgba(0, 143, 134, 0.14), inset 0 2px 6px rgba(0, 0, 0, 0.10);
 }
 
 .receive-panel {
@@ -819,6 +932,40 @@ textarea {
 
 .metric-card.metric-slider {
   grid-column: span 2;
+}
+
+.main-grid.workspace-vacuum #sendControlGrid .metric-card {
+  min-width: 0;
+}
+
+.main-grid.workspace-vacuum #sendControlGrid .metric-card:has(.vacuum-power-pad),
+.main-grid.workspace-vacuum #sendControlGrid .vacuum-data-tabs {
+  grid-column: 1 / -1;
+}
+
+.vacuum-data-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(0, 143, 134, 0.18);
+  border-radius: 10px;
+  background: #f4faf9;
+}
+
+.vacuum-data-tabs button {
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.vacuum-data-tabs button.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 7px 14px rgba(0, 143, 134, 0.18);
 }
 
 .metric-card.metric-switch {

@@ -1,10 +1,10 @@
-mod serial;
+﻿mod serial;
 mod tcp;
 mod updater;
 
 use std::sync::Mutex;
 use tauri::menu::*;
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 
 /// Shared application state
 pub struct AppState {
@@ -39,19 +39,20 @@ pub fn run() {
             updater::apply_update,
             app_get_version,
             app_set_language,
+            app_set_workspace_view,
         ])
         .setup(|app| {
-            setup_menu(app)?;
+            setup_menu(app.handle(), "general")?;
             Ok(())
         })
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
-            // 用 eval 直接调用前端函数，绕过事件系统
+            // Use eval to call frontend functions from native menu events.
             if let Some(w) = app.get_webview_window("main") {
                 let js = match id {
-                    // 编辑
+                    // 缂栬緫
                     "protocol_analysis" => "openProtocolAnalysis()",
-                    // 视图
+                    // 瑙嗗浘
                     "view_workbench" => "setAppMode('workbench')",
                     "view_terminal" => "setAppMode('terminal')",
                     "view_general" => "setWorkspaceView('general')",
@@ -59,13 +60,13 @@ pub fn run() {
                     "view_ecm" => "setWorkspaceView('ecm')",
                     "view_compressor" => "setWorkspaceView('compressor')",
                     "reload" => "location.reload()",
-                    // 设置
+                    // 璁剧疆
                     "tool_settings" => "setAppMode('settings')",
                     "lang_zh" => "applyToolLanguage('zh')",
                     "lang_en" => "applyToolLanguage('en')",
                     "lang_ja" => "applyToolLanguage('ja')",
                     "lang_ko" => "applyToolLanguage('ko')",
-                    // 帮助
+                    // 甯姪
                     "help" => "setAppMode('help')",
                     "check_updates" => "{ saveUpdateSettings(); window.ftApp?.checkUpdates(); }",
                     _ => return,
@@ -87,14 +88,23 @@ fn app_set_language(_language: String) -> String {
     "ok".to_string()
 }
 
-fn setup_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let h = app.handle();
+#[tauri::command]
+fn app_set_workspace_view(app: AppHandle, view: String) -> Result<(), String> {
+    setup_menu(&app, &view).map_err(|err| err.to_string())
+}
 
-    // ── 文件 ──
+fn workspace_label(selected: &str, value: &str, label: &str) -> String {
+    if selected == value {
+        format!("● {}", label)
+    } else {
+        format!("  {}", label)
+    }
+}
+
+fn setup_menu(h: &AppHandle, selected_workspace: &str) -> Result<(), Box<dyn std::error::Error>> {
     let file = Submenu::with_id(h, "file", "文件", true)?;
     file.append(&PredefinedMenuItem::quit(h, Some("退出"))?)?;
 
-    // ── 编辑 ──
     let edit = Submenu::with_id(h, "edit", "编辑", true)?;
     edit.append_items(&[
         &PredefinedMenuItem::undo(h, Some("撤销"))?,
@@ -108,22 +118,20 @@ fn setup_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         &MenuItem::with_id(h, "protocol_analysis", "协议解析", true, None::<&str>)?,
     ])?;
 
-    // ── 视图 ──
     let view = Submenu::with_id(h, "view", "视图", true)?;
     view.append_items(&[
         &MenuItem::with_id(h, "view_workbench", "工作台", true, None::<&str>)?,
         &MenuItem::with_id(h, "view_terminal", "命令行", true, None::<&str>)?,
         &PredefinedMenuItem::separator(h)?,
-        &MenuItem::with_id(h, "view_general", "通用", true, None::<&str>)?,
-        &MenuItem::with_id(h, "view_vacuum", "吸尘器", true, None::<&str>)?,
-        &MenuItem::with_id(h, "view_ecm", "ECM风机", true, None::<&str>)?,
-        &MenuItem::with_id(h, "view_compressor", "压缩机", true, None::<&str>)?,
+        &MenuItem::with_id(h, "view_general", workspace_label(selected_workspace, "general", "通用"), true, None::<&str>)?,
+        &MenuItem::with_id(h, "view_vacuum", workspace_label(selected_workspace, "vacuum", "吸尘器"), true, None::<&str>)?,
+        &MenuItem::with_id(h, "view_ecm", workspace_label(selected_workspace, "ecm", "ECM风机"), true, None::<&str>)?,
+        &MenuItem::with_id(h, "view_compressor", workspace_label(selected_workspace, "compressor", "压缩机"), true, None::<&str>)?,
         &PredefinedMenuItem::separator(h)?,
         &MenuItem::with_id(h, "reload", "刷新", true, Some("F5"))?,
         &PredefinedMenuItem::fullscreen(h, Some("全屏"))?,
     ])?;
 
-    // ── 设置 ──
     let settings = Submenu::with_id(h, "settings", "设置", true)?;
     settings.append_items(&[
         &MenuItem::with_id(h, "tool_settings", "工具设置", true, None::<&str>)?,
@@ -134,7 +142,6 @@ fn setup_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         &MenuItem::with_id(h, "lang_ko", "한국어", true, None::<&str>)?,
     ])?;
 
-    // ── 帮助 ──
     let help = Submenu::with_id(h, "help_menu", "帮助", true)?;
     help.append_items(&[
         &MenuItem::with_id(h, "help", "帮助", true, None::<&str>)?,
@@ -143,6 +150,6 @@ fn setup_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     ])?;
 
     let menu = Menu::with_items(h, &[&file, &edit, &view, &settings, &help])?;
-    app.set_menu(menu)?;
+    h.set_menu(menu)?;
     Ok(())
 }

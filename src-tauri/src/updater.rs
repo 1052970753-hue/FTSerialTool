@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
@@ -169,32 +170,45 @@ pub async fn apply_update(app: AppHandle, zip_path: String) -> Result<bool, Stri
         let _ = w.eval("renderUpdateProgress({state:'installing',message:'正在替换文件，应用将自动重启...'})");
     }
 
+    // 从 zip 文件名提取版本号（如 FTSerialTool-1.2.15-x64-portable.zip → 1.2.15）
+    let zip_name = zip_path.file_stem().unwrap_or_default().to_string_lossy();
+    let version_re = Regex::new(r"(\d+\.\d+\.\d+)").unwrap();
+    let new_version = version_re.find(&zip_name).map(|m| m.as_str()).unwrap_or("unknown");
+
     // 先把新 exe 复制到当前 exe 同目录下的临时文件名
     let exe_dir = current_exe.parent().unwrap_or(&temp_dir);
     let temp_new = exe_dir.join("__update_new.exe");
     let _ = fs::copy(&new_exe_path, &temp_new);
 
-    // 创建批处理脚本：重命名当前 exe（不删除），替换，启动，清理
+    // 计算最终目标文件名（带版本号）
+    let final_name = format!("FTSerialTool-{}.exe", new_version);
+    let final_path = exe_dir.join(&final_name);
+
+    // 创建批处理脚本：重命名当前 exe（不删除），替换为带版本号的名字，启动，清理
     let bat_path = exe_dir.join("__update.bat");
     let current_str = current_exe.to_string_lossy().to_string();
     let temp_new_str = temp_new.to_string_lossy().to_string();
+    let final_str = final_path.to_string_lossy().to_string();
     let old_str = format!("{}.old", current_str);
     let temp_dir_str = temp_dir.to_string_lossy().to_string();
 
     let bat_content = format!(
         "@echo off\r\n\
+         chcp 65001 >nul 2>&1\r\n\
          ping -n 3 127.0.0.1 >nul\r\n\
          :retry\r\n\
-         ren \"{current}\" *.old >nul 2>&1\r\n\
+         ren \"{current}\" __old.exe >nul 2>&1\r\n\
          if exist \"{current}\" goto retry\r\n\
-         move /y \"{temp_new}\" \"{current}\" >nul\r\n\
-         start \"\" \"{current}\"\r\n\
+         if exist \"{final}\" del \"{final}\" >nul 2>&1\r\n\
+         move /y \"{temp_new}\" \"{final}\" >nul\r\n\
+         start \"\" \"{final}\"\r\n\
          ping -n 2 127.0.0.1 >nul\r\n\
-         del \"{old}\" >nul 2>&1\r\n\
-         rd /s /q \"{temp}\" >nul 2>&1\r\n\
-         del \"%~f0\" >nul 2>&1\r\n",
+         if exist \"{old}\" del \"{old}\" >nul 2>&1\r\n\
+         if exist \"{temp}\" rd /s /q \"{temp}\" >nul 2>&1\r\n\
+         (goto) 2>nul & del \"%~f0\"\r\n",
         current = current_str,
         temp_new = temp_new_str,
+        final = final_str,
         old = old_str,
         temp = temp_dir_str,
     );
